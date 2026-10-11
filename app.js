@@ -343,20 +343,44 @@ function putarHero() {
 }
 const logoUsaha = (u) => u && u.logo ? `<img class="pub-logo" src="${esc(urlPublik(u.logo))}" alt="Logo ${esc(u.nama_usaha)}">` : `<span class="pub-logo ikon">${ic('two_wheeler')}</span>`;
 
+// ── Footer publik: media sosial + ikon masuk staf ──
+const IKON_SOSMED = {
+  instagram: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor" stroke="none"/></svg>',
+  facebook: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M14 8.5V7c0-.7.3-1 1.100-1H17V3h-2.700C11.600 3 10.500 4.600 10.500 6.800V8.500H8v3h2.500V21h3.500v-9.500h2.600l.4-3H14z"/></svg>',
+  tiktok: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M16.500 3c.3 2.200 1.600 3.700 3.800 3.900v3.100c-1.400 0-2.700-.4-3.800-1.200v6.100a6 6 0 1 1-6-6c.3 0 .6 0 .9.100v3.200a2.900 2.900 0 1 0 2 2.700V3h3.100z"/></svg>',
+  youtube: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M21.600 7.200a2.500 2.500 0 0 0-1.800-1.800C18.200 5 12 5 12 5s-6.200 0-7.800.4A2.500 2.500 0 0 0 2.400 7.200C2 8.800 2 12 2 12s0 3.200.4 4.800a2.500 2.500 0 0 0 1.800 1.800C5.800 19 12 19 12 19s6.200 0 7.800-.4a2.500 2.500 0 0 0 1.800-1.800c.4-1.600.4-4.800.4-4.800s0-3.200-.4-4.800zM10 15V9l5.200 3L10 15z"/></svg>'
+};
+const NAMA_SOSMED = { instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok', youtube: 'YouTube' };
+// Terima URL lengkap (http/https) ATAU nama akun saja; selain itu dijadikan alamat akun di situs tujuan.
+function linkSosmed(k, v) {
+  v = String(v || '').trim(); if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  const u = v.replace(/^@/, '').replace(/[^\w.\-]/g, '');
+  if (!u) return '';
+  return { instagram: `https://instagram.com/${u}`, facebook: `https://facebook.com/${u}`, tiktok: `https://tiktok.com/@${u}`, youtube: `https://youtube.com/@${u}` }[k] || '';
+}
+function footerPublik(u) {
+  const so = u.sosmed || {}, tautan = Object.keys(NAMA_SOSMED).map((k) => [k, linkSosmed(k, so[k])]).filter((x) => x[1]);
+  if (u.wa_sorum) tautan.push(['whatsapp', waLink(u.wa_sorum)]);
+  const masuk = S.profile ? `<a class="pf-staff" href="#/dashboard" aria-label="Buka aplikasi" title="Buka aplikasi">${ic('dashboard')}</a>` : `<a class="pf-staff" href="#/masuk" aria-label="Masuk staf" title="Masuk staf">${ic('lock')}</a>`;
+  return `<footer class="pub-foot"><div class="pf-nama">${esc(u.nama_usaha)}</div>${u.alamat_usaha ? `<div class="pf-alamat">${ic('location_on', 'sm')} ${esc(u.alamat_usaha)}</div>` : ''}
+    ${tautan.length ? `<div class="pf-sosmed">${tautan.map(([k, h]) => `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer" aria-label="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}" title="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}">${k === 'whatsapp' ? ic('chat') : IKON_SOSMED[k]}</a>`).join('')}</div>` : ''}
+    <div class="pf-bawah"><span>© ${new Date().getFullYear()} ${esc(u.nama_usaha)}</span>${masuk}</div></footer>`;
+}
+
 // ── Katalog publik ──
 async function halKatalog() {
   clearInterval(_heroTimer);
-  app().innerHTML = `<header class="pub-head"><div class="in row between"><div class="pub-brand"><span id="pub-logo">${logoUsaha(S.usaha)}</span><div><h1 id="pub-nama">${esc((S.usaha && S.usaha.nama_usaha) || 'Berkah Abadi Motor')}</h1><p>Jual Beli Motor Bekas Berkualitas</p></div></div>
-    <a class="login-link" href="#/masuk">${ic('lock', 'sm')} Staf</a></div></header>
+  app().innerHTML = `<header class="pub-head"><div class="in row between"><div class="pub-brand"><span id="pub-logo">${logoUsaha(S.usaha)}</span><div><h1 id="pub-nama">${esc((S.usaha && S.usaha.nama_usaha) || 'Berkah Abadi Motor')}</h1><p>Jual Beli Motor Bekas Berkualitas</p></div></div></div></header>
     <div class="pub-wrap"><div id="k-hero"></div>
     <div class="pub-tools"><div class="search">${ic('search')}<input id="k-cari" type="search" placeholder="Cari merk, tipe, atau tahun…" aria-label="Cari motor"></div>
     <div class="chips-wrap"><div class="chips" id="k-merk" role="group" aria-label="Merk"></div></div>
     <div class="tools-bar"><span class="small muted" id="k-jumlah" aria-live="polite"></span><label class="urut"><span class="xs muted">Urutkan</span><select id="k-urut" aria-label="Urutkan"><option value="baru">Terbaru</option><option value="murah">Harga terendah</option><option value="mahal">Harga tertinggi</option></select></label></div></div>
-    <div class="cars" id="k-list">${loading(3)}</div></div>`;
+    <div class="cars" id="k-list">${loading(3)}</div><div id="k-foot"></div></div>`;
   const d = await q(sb.rpc('rpc_katalog_publik'));
   if (!$('#k-list')) return;   // pengguna sudah pindah halaman
   if (!d) { $('#k-list').innerHTML = kosong('cloud_off', 'Katalog belum dapat dimuat. Coba lagi nanti.'); return; }
-  S.usaha = d.usaha; $('#pub-nama').textContent = d.usaha.nama_usaha; document.title = d.usaha.nama_usaha; $('#pub-logo').innerHTML = logoUsaha(d.usaha);
+  S.usaha = d.usaha; $('#pub-nama').textContent = d.usaha.nama_usaha; document.title = d.usaha.nama_usaha; $('#pub-logo').innerHTML = logoUsaha(d.usaha); $('#k-foot').innerHTML = footerPublik(d.usaha);
   $('#k-hero').innerHTML = heroHtml(d.usaha); pasangSlider($('#k-hero')); putarHero();
   const semua = d.motor || []; let merk = 'Semua';
   const merkList = ['Semua', ...Array.from(new Set(semua.map((m) => m.merk))).sort()];
@@ -383,7 +407,6 @@ async function halKatalog() {
   $('#k-cari').oninput = gambar; $('#k-urut').onchange = gambar;
   $('#k-merk').onclick = (e) => { const b = e.target.closest('[data-merk]'); if (!b) return; merk = b.dataset.merk; $$('#k-merk .chip').forEach((c) => c.classList.toggle('active', c === b)); gambar(); };
   gambar();
-  if (S.profile) { const ll = $('.login-link'); if (ll) { ll.href = '#/dashboard'; ll.innerHTML = ic('dashboard', 'sm') + ' Buka aplikasi'; } }
   if (d.usaha.wa_sorum) { const bar = document.createElement('div'); bar.className = 'cta-bar'; bar.innerHTML = `<a class="btn wa" href="${esc(waLink(d.usaha.wa_sorum, 'Halo ' + d.usaha.nama_usaha + ', saya ingin tanya motor yang tersedia.'))}" target="_blank" rel="noopener">${ic('chat')} Tanya via WhatsApp</a>`; app().appendChild(bar); }
 }
 
@@ -407,6 +430,7 @@ async function halDetailPublik(slug) {
     ${m.deskripsi ? `<div><h3>Deskripsi</h3><p style="white-space:pre-line;margin:6px 0 0">${esc(m.deskripsi)}</p></div>` : ''}
     ${u.alamat_usaha ? `<div class="small muted">${ic('location_on', 'sm')} ${esc(u.alamat_usaha)}</div>` : ''}</div></div>
     <div class="cta-bar">${u.wa_sorum ? `<a class="btn wa" href="${esc(waLink(u.wa_sorum, pesan))}" target="_blank" rel="noopener">${ic('chat')} Tanya via WhatsApp</a>` : ''}<button class="btn ghost" id="g-share" style="max-width:120px">${ic('share')} Bagikan</button></div>`;
+  box.insertAdjacentHTML('beforeend', footerPublik(u));
   pasangSlider($('.gallery', box));
   $('#g-share').onclick = () => bagikan(m);
 }
@@ -1137,6 +1161,7 @@ function kartuKatalogHtml(cfg) {
     <div class="row" style="gap:12px"><span class="pub-logo-prev">${cfg.logo_path ? `<img src="${esc(urlPublik(cfg.logo_path))}" alt="Logo">` : ic('two_wheeler')}</span>
       <div class="grow"><b>Logo</b><div class="xs muted">Tampil di sebelah kiri nama showroom. Disarankan PNG persegi/transparan.</div></div></div>
     <div class="row wrap"><button class="btn ghost sm" id="lg-up">${ic('upload', 'sm')} ${cfg.logo_path ? 'Ganti logo' : 'Unggah logo'}</button>${cfg.logo_path ? `<button class="btn ghost sm" id="lg-del">${ic('delete', 'sm')} Hapus</button>` : ''}</div>
+    <hr class="sep"><div class="row between"><div><b>Media sosial</b><div class="xs muted">${['instagram', 'facebook', 'tiktok', 'youtube'].filter((k) => cfg['sosmed_' + k]).map((k) => NAMA_SOSMED[k]).join(', ') || 'Belum diisi. Tampil sebagai ikon di footer katalog.'}</div></div><button class="btn ghost sm" id="ss-ubah">${ic('edit', 'sm')} Ubah</button></div>
     <hr class="sep"><div class="row between"><div><b>Banner</b> <span class="xs muted">(${list.length}/${MAKS_BANNER})</span><div class="xs muted">Ukuran ideal 1600×800 px (rasio 2:1). Bila kosong, tampil banner bawaan.</div></div>
       <button class="btn accent sm" id="bn-add" ${list.length >= MAKS_BANNER ? 'disabled' : ''}>${ic('add', 'sm')} Banner</button></div>
     ${list.length ? `<div class="list">${list.map((b, i) => `<div class="item bn-row" data-i="${i}"><span class="bn-th">${b.path ? `<img src="${esc(urlPublik(b.path))}" alt="">` : ic('image')}</span><div class="grow"><div class="t">${esc(b.judul || b.label || 'Banner ' + (i + 1))}</div><div class="xs muted">${esc(b.sub || (b.path ? 'Gambar' : 'Teks saja'))}</div></div>
@@ -1177,6 +1202,10 @@ function pasangKartuKatalog(cfg) {
       const l = $('#bn-lepas', sh.el); if (l) l.onclick = () => { lepas = true; berkas = null; $('#bn-prev', sh.el).innerHTML = '<span class="muted small">Tanpa gambar</span>'; };
     } });
   };
+  $('#ss-ubah').onclick = () => formSheet('Media sosial', ['instagram', 'facebook', 'tiktok', 'youtube'].map((k) => ({ k: 'sosmed_' + k, label: NAMA_SOSMED[k], val: cfg['sosmed_' + k], max: 200, ph: k === 'facebook' ? 'namahalaman atau https://…' : '@namaakun atau https://…' })).concat([{ html: '<span class="hint">Isi nama akun atau tautan lengkap. Kosongkan untuk menyembunyikan. Tombol WhatsApp memakai nomor showroom.</span>' }]), async (v) => {
+    const rows = Object.entries(v).map(([key, value]) => ({ key, value: value == null ? '' : String(value).trim() }));
+    if (!(await tulis(sb.from('pengaturan').upsert(rows, { onConflict: 'key' }), 'Media sosial disimpan.'))) return false; halPengaturan(); return true;
+  });
   $('#bn-add').onclick = () => formBanner(null);
   const box = $('#bn-add').closest('.card');
   box.onclick = async (e) => {
