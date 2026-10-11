@@ -10,7 +10,7 @@ window.BAM_CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_S1hz3ZEWouudLhOH4k6rvA_ArAyb9H8',
 
   // Alamat situs setelah di-deploy (tanpa garis miring di akhir), dipakai untuk tautan bagikan.
-  SITE_URL: 'https://berkah-abadi-motor.vercel.app',
+  SITE_URL: 'https://bam-bice.vercel.app',
 
   // true  → tautan bagikan berbentuk  https://domain/motor/<slug>   (pratinjau WhatsApp ada foto & harga;
   //         butuh api/motor.js + vercel.json dari paket ini → hosting Vercel)
