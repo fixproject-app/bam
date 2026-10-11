@@ -264,13 +264,28 @@ const STATUS_MOTOR = ['Masuk', 'Pemeriksaan', 'Restorasi', 'Ready', 'Booking', '
 const FOTO_JENIS = { 1: 'utama', 2: 'kedua', 3: 'ketiga', 4: 'keempat', 5: 'berkas' };
 const waLink = (nomor, teks) => 'https://wa.me/' + String(nomor || '').replace(/\D/g, '').replace(/^0/, '62') + (teks ? '?text=' + encodeURIComponent(teks) : '');
 function linkBagikan(slug) {
-  const base = String(CFG.SITE_URL || location.origin).replace(/\/$/, '');
+  const ada = CFG.SITE_URL && !/GANTI-DENGAN/.test(CFG.SITE_URL);
+  const base = String(ada ? CFG.SITE_URL : location.origin).replace(/\/$/, '');
   return CFG.SHARE_PRETTY_LINK ? `${base}/motor/${slug}` : `${base}/#/motor/${slug}`;
 }
-async function bagikan(m) {
-  const url = linkBagikan(m.public_slug || m.slug), teks = `${m.merk} ${m.tipe} ${m.tahun} — Berkah Abadi Motor`;
-  try { if (navigator.share) { await navigator.share({ title: teks, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
-  try { await navigator.clipboard.writeText(url); ok('Tautan disalin.'); } catch (e) { prompt('Salin tautan ini:', url); }
+// Jendela "Bagikan": tautan + Salin + WhatsApp (+ menu bagikan bawaan perangkat bila ada)
+function bagikan(m) {
+  const url = linkBagikan(m.public_slug || m.slug), judul = `${m.merk} ${m.tipe} ${m.tahun}`;
+  const teks = `${judul} — ${(S.usaha && S.usaha.nama_usaha) || 'Berkah Abadi Motor'}\n${url}`;
+  const belumTampil = m.status !== undefined && (m.status !== 'Ready' || !m.tampil_katalog);
+  const sh = sheet('Bagikan motor', `<div class="stack">
+    ${belumTampil ? `<div class="alert">${ic('warning')}<div>Unit ini <b>belum tampil di katalog</b> (harus berstatus Ready dan "Tampil di katalog" aktif). Penerima tautan akan melihat pesan "motor tidak tersedia".</div></div>` : ''}
+    <div class="field"><label for="bg-url">Tautan</label><input id="bg-url" readonly value="${esc(url)}"></div>
+    <div class="grid c2"><button class="btn" data-salin>${ic('content_copy', 'sm')} Salin tautan</button><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(teks)}">${ic('chat', 'sm')} WhatsApp</a></div>
+    ${navigator.share ? `<button class="btn ghost block" data-lain>${ic('ios_share', 'sm')} Bagikan lewat aplikasi lain…</button>` : ''}</div>`, { noFocus: true });
+  const inp = $('#bg-url', sh.el);
+  inp.onfocus = () => inp.select();
+  $('[data-salin]', sh.el).onclick = async () => {
+    try { await navigator.clipboard.writeText(url); ok('Tautan disalin.'); }
+    catch (e) { inp.focus(); inp.select(); try { document.execCommand('copy'); ok('Tautan disalin.'); } catch (e2) { toast('Tekan Ctrl+C untuk menyalin.', 'err'); } }
+  };
+  const lain = $('[data-lain]', sh.el);
+  if (lain) lain.onclick = async () => { try { await navigator.share({ title: judul, text: judul, url }); } catch (e) { /* dibatalkan */ } };
 }
 function unduhBerkas(nama, isi, mime) {
   const b = new Blob([isi], { type: mime }), a = document.createElement('a');
