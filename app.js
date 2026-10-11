@@ -196,8 +196,8 @@ async function urlTertanda(bucket, path) {
   return data.signedUrl;
 }
 // Kompres gambar di browser (hemat kuota & storage)
-function kompres(file, maks, mutu) {
-  maks = maks || 1600; mutu = mutu || 0.82;
+function kompres(file, maks, mutu, tipe) {
+  maks = maks || 1600; mutu = mutu || 0.82; tipe = tipe || 'image/jpeg';
   return new Promise((res, rej) => {
     if (!/^image\//.test(file.type)) return res(file);
     const img = new Image(), u = URL.createObjectURL(file);
@@ -206,8 +206,10 @@ function kompres(file, maks, mutu) {
       const r = Math.min(1, maks / Math.max(w, h));
       w = Math.round(w * r); h = Math.round(h * r);
       const c = document.createElement('canvas'); c.width = w; c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
-      c.toBlob((b) => { URL.revokeObjectURL(u); b ? res(b) : rej(new Error('Gagal memproses gambar.')); }, 'image/jpeg', mutu);
+      const cx = c.getContext('2d');
+      if (tipe === 'image/jpeg') { cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); }   // PNG transparan → latar putih, bukan hitam
+      cx.drawImage(img, 0, 0, w, h);
+      c.toBlob((b) => { URL.revokeObjectURL(u); b ? res(b) : rej(new Error('Gagal memproses gambar.')); }, tipe, mutu);
     };
     img.onerror = () => { URL.revokeObjectURL(u); rej(new Error('File gambar tidak dapat dibaca.')); };
     img.src = u;
@@ -295,28 +297,89 @@ function unduhBerkas(nama, isi, mime) {
 // ───────────────────── 2. PUBLIK, LOGIN, SHELL ─────────────────────
 const app = () => $('#app');
 
+// ── Slider / carousel (dipakai hero banner, kartu motor, dan galeri detail) ──
+// Markup: <div class="sl"><div class="sl-track"><div class="sl-item">…</div></div> [data-sl="-1|1"] .sl-dots .sl-count</div>
+// Geser dengan sentuhan (scroll-snap native) atau tombol panah. Pendengar dipasang SATU kali per wadah (delegasi).
+function pasangSlider(root) {
+  root.addEventListener('scroll', (e) => {
+    const t = e.target; if (!t.classList || !t.classList.contains('sl-track')) return;
+    const n = t.children.length, i = Math.min(n - 1, Math.max(0, Math.round(t.scrollLeft / Math.max(1, t.clientWidth)))), s = t.closest('.sl');
+    $$('.sl-dots i', s).forEach((d, k) => d.classList.toggle('on', k === i));
+    const c = $('.sl-count', s); if (c) c.textContent = `${i + 1}/${n}`;
+  }, true);
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sl]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const t = $('.sl-track', b.closest('.sl')), n = t.children.length, w = t.clientWidth, i = Math.round(t.scrollLeft / Math.max(1, w)) + Number(b.dataset.sl);
+    t.scrollTo({ left: ((i % n) + n) % n * w, behavior: 'smooth' });   // berputar: setelah foto terakhir kembali ke pertama
+  });
+}
+const slDots = (n) => n > 1 ? `<div class="sl-dots">${Array.from({ length: n }, (_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : '';
+const slPanah = (n) => n > 1 ? `<button class="sl-nav prev" data-sl="-1" aria-label="Sebelumnya">${ic('chevron_left')}</button><button class="sl-nav next" data-sl="1" aria-label="Berikutnya">${ic('chevron_right')}</button>` : '';
+const lencanaVerif = () => `<span class="vbadge" title="Sudah melewati pemeriksaan kondisi">${ic('verified', 'sm')} Terverifikasi</span>`;
+let _heroTimer = null;
+
+function heroHtml(u) {
+  const adaBanner = Array.isArray(u.banner) && u.banner.length;
+  const sl = adaBanner ? u.banner : [{ label: 'Motor Bekas Pilihan', judul: 'Kualitas Terbaik, Harga Bersahabat', sub: 'Temukan motor impianmu dengan mudah dan aman.' }];
+  const item = (b, i) => `<div class="sl-item hero-slide ${b.path ? 'berfoto' : 'polos'} ${b.label || b.judul || b.sub ? 'bergaris' : ''}">${b.path ? `<img ${i ? 'loading="lazy" ' : ''}src="${esc(urlPublik(b.path))}" alt="${esc(b.judul || 'Banner')}" draggable="false">` : ''}
+    <div class="hero-txt">${b.label ? `<span class="hero-lbl">${esc(b.label)}</span>` : ''}${b.judul ? `<h2>${esc(b.judul)}</h2>` : ''}${b.sub ? `<p>${esc(b.sub)}</p>` : ''}</div></div>`;
+  return `<section class="hero sl" id="hero" aria-label="Banner"><div class="sl-track">${sl.map(item).join('')}</div>${slPanah(sl.length)}${slDots(sl.length)}</section>`;
+}
+function putarHero() {
+  clearInterval(_heroTimer);
+  const h = $('#hero'); if (!h || h.querySelectorAll('.sl-item').length < 2) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let jeda = false;
+  ['pointerdown', 'mouseenter', 'focusin'].forEach((ev) => h.addEventListener(ev, () => { jeda = true; }));
+  ['mouseleave', 'focusout'].forEach((ev) => h.addEventListener(ev, () => { jeda = false; }));
+  h.addEventListener('touchend', () => { setTimeout(() => { jeda = false; }, 4000); }, { passive: true });
+  _heroTimer = setInterval(() => {
+    if (!document.body.contains(h)) return clearInterval(_heroTimer);
+    if (jeda || document.hidden) return;
+    const t = $('.sl-track', h), n = t.children.length, w = t.clientWidth, i = Math.round(t.scrollLeft / Math.max(1, w));
+    t.scrollTo({ left: ((i + 1) % n) * w, behavior: 'smooth' });
+  }, 5000);
+}
+const logoUsaha = (u) => u && u.logo ? `<img class="pub-logo" src="${esc(urlPublik(u.logo))}" alt="Logo ${esc(u.nama_usaha)}">` : `<span class="pub-logo ikon">${ic('two_wheeler')}</span>`;
+
 // ── Katalog publik ──
 async function halKatalog() {
-  app().innerHTML = `<div class="pub-head"><div class="in"><div class="row between"><div><h1 id="pub-nama">Berkah Abadi Motor</h1><p>Katalog motor bekas siap jual</p></div>
-    <a class="login-link" href="#/masuk">${ic('lock', 'sm')} Staf</a></div></div></div>
-    <div class="pub-wrap"><div class="pub-tools"><div class="search">${ic('search')}<input id="k-cari" type="search" placeholder="Cari merk, tipe, atau tahun…" aria-label="Cari motor"></div>
-    <div class="row"><div class="chips grow" id="k-merk"></div><select id="k-urut" style="width:auto" aria-label="Urutkan"><option value="baru">Terbaru</option><option value="murah">Harga terendah</option><option value="mahal">Harga tertinggi</option></select></div></div>
+  clearInterval(_heroTimer);
+  app().innerHTML = `<header class="pub-head"><div class="in row between"><div class="pub-brand"><span id="pub-logo">${logoUsaha(S.usaha)}</span><div><h1 id="pub-nama">${esc((S.usaha && S.usaha.nama_usaha) || 'Berkah Abadi Motor')}</h1><p>Jual Beli Motor Bekas Berkualitas</p></div></div>
+    <a class="login-link" href="#/masuk">${ic('lock', 'sm')} Staf</a></div></header>
+    <div class="pub-wrap"><div id="k-hero"></div>
+    <div class="pub-tools"><div class="search">${ic('search')}<input id="k-cari" type="search" placeholder="Cari merk, tipe, atau tahun…" aria-label="Cari motor"></div>
+    <div class="chips-wrap"><div class="chips" id="k-merk" role="group" aria-label="Merk"></div></div>
+    <div class="tools-bar"><span class="small muted" id="k-jumlah" aria-live="polite"></span><label class="urut"><span class="xs muted">Urutkan</span><select id="k-urut" aria-label="Urutkan"><option value="baru">Terbaru</option><option value="murah">Harga terendah</option><option value="mahal">Harga tertinggi</option></select></label></div></div>
     <div class="cars" id="k-list">${loading(3)}</div></div>`;
   const d = await q(sb.rpc('rpc_katalog_publik'));
+  if (!$('#k-list')) return;   // pengguna sudah pindah halaman
   if (!d) { $('#k-list').innerHTML = kosong('cloud_off', 'Katalog belum dapat dimuat. Coba lagi nanti.'); return; }
-  S.usaha = d.usaha; $('#pub-nama').textContent = d.usaha.nama_usaha; document.title = d.usaha.nama_usaha;
+  S.usaha = d.usaha; $('#pub-nama').textContent = d.usaha.nama_usaha; document.title = d.usaha.nama_usaha; $('#pub-logo').innerHTML = logoUsaha(d.usaha);
+  $('#k-hero').innerHTML = heroHtml(d.usaha); pasangSlider($('#k-hero')); putarHero();
   const semua = d.motor || []; let merk = 'Semua';
   const merkList = ['Semua', ...Array.from(new Set(semua.map((m) => m.merk))).sort()];
   $('#k-merk').innerHTML = merkList.map((m) => `<button class="chip ${m === merk ? 'active' : ''}" data-merk="${esc(m)}">${esc(m)}</button>`).join('');
+  const kartu = (m) => {
+    const fo = m.fotos && m.fotos.length ? m.fotos : (m.foto ? [{ path: m.foto }] : []), nm = nmMotor(m), href = `#/motor/${esc(m.slug)}`;
+    const pesan = `Halo ${d.usaha.nama_usaha}, saya tertarik dengan ${nm} ${m.tahun}. Apakah masih tersedia?\n${linkBagikan(m.slug)}`;
+    return `<article class="car" data-href="${href}"><div class="ph sl">${m.terverifikasi ? lencanaVerif() : ''}${fo.length > 1 ? `<span class="sl-count">1/${fo.length}</span>` : ''}
+      ${fo.length ? `<div class="sl-track">${fo.map((f, i) => `<div class="sl-item"><img ${i ? 'loading="lazy" ' : ''}src="${esc(urlPublik(f.path, f.v))}" alt="${esc(nm)} foto ${i + 1}" draggable="false"></div>`).join('')}</div>${slPanah(fo.length)}${slDots(fo.length)}` : `<div class="sl-kosong">${ic('two_wheeler', 'lg')}</div>`}</div>
+      <div class="bd"><a class="nm" href="${href}">${esc(nm)} ${esc(m.tahun)}</a>
+      <div class="specs">${m.kilometer != null ? `<span class="spec">${ic('speed', 'sm')} ${angka(m.kilometer)} km</span>` : ''}${m.warna ? `<span class="spec">${ic('palette', 'sm')} ${esc(m.warna)}</span>` : ''}${m.kelengkapan_surat ? `<span class="spec">${ic('description', 'sm')} ${esc(m.kelengkapan_surat)}</span>` : ''}</div>
+      <div class="pr">${m.harga ? rp(m.harga) : 'Hubungi kami'}</div>
+      <div class="car-aksi"><a class="btn ghost" href="${href}">Lihat Detail</a>${d.usaha.wa_sorum ? `<a class="btn wa" href="${esc(waLink(d.usaha.wa_sorum, pesan))}" target="_blank" rel="noopener">${ic('chat', 'sm')} Tanya via WA</a>` : ''}</div></div></article>`;
+  };
   const gambar = () => {
     const cari = $('#k-cari').value.toLowerCase().trim(), urut = $('#k-urut').value;
     let l = semua.filter((m) => (merk === 'Semua' || m.merk === merk) && (!cari || `${m.merk} ${m.tipe} ${m.tahun} ${m.warna || ''}`.toLowerCase().includes(cari)));
     if (urut === 'murah') l.sort((a, b) => (a.harga || 9e15) - (b.harga || 9e15)); else if (urut === 'mahal') l.sort((a, b) => (b.harga || 0) - (a.harga || 0));
-    $('#k-list').innerHTML = l.length ? l.map((m) => `<a class="car" href="#/motor/${esc(m.slug)}"><div class="ph">${m.foto ? `<img loading="lazy" src="${esc(urlPublik(m.foto))}" alt="${esc(nmMotor(m))}">` : ic('two_wheeler', 'lg')}</div>
-      <div class="bd"><div class="nm">${esc(nmMotor(m))} <span class="muted small">${esc(m.tahun)}</span></div><div class="pr">${m.harga ? rp(m.harga) : 'Hubungi kami'}</div>
-      <div class="specs">${m.kilometer != null ? `<span class="spec">${angka(m.kilometer)} km</span>` : ''}${m.warna ? `<span class="spec">${esc(m.warna)}</span>` : ''}${m.kelengkapan_surat ? `<span class="spec">${esc(m.kelengkapan_surat)}</span>` : ''}</div></div></a>`).join('')
-      : kosong('search_off', semua.length ? 'Tidak ada motor yang cocok dengan pencarian.' : 'Belum ada unit yang ditampilkan saat ini.');
+    $('#k-jumlah').textContent = `${l.length} unit tersedia`;
+    $('#k-list').innerHTML = l.length ? l.map(kartu).join('') : kosong('search_off', semua.length ? 'Tidak ada motor yang cocok dengan pencarian.' : 'Belum ada unit yang ditampilkan saat ini.');
   };
+  pasangSlider($('#k-list'));
+  $('#k-list').addEventListener('click', (e) => { if (e.target.closest('a,button')) return; const c = e.target.closest('[data-href]'); if (c) location.hash = c.dataset.href; });
   $('#k-cari').oninput = gambar; $('#k-urut').onchange = gambar;
   $('#k-merk').onclick = (e) => { const b = e.target.closest('[data-merk]'); if (!b) return; merk = b.dataset.merk; $$('#k-merk .chip').forEach((c) => c.classList.toggle('active', c === b)); gambar(); };
   gambar();
@@ -326,6 +389,7 @@ async function halKatalog() {
 
 // ── Detail motor publik ──
 async function halDetailPublik(slug) {
+  clearInterval(_heroTimer);
   app().innerHTML = `<div class="pub-head" style="padding-bottom:16px"><div class="in row"><a class="icon-btn" href="#/" aria-label="Kembali" style="color:#fff">${ic('arrow_back')}</a><h2 style="color:#fff" id="pd-nama">Detail motor</h2></div></div><div class="pub-wrap" style="margin-top:12px" id="pd">${loading(2)}</div>`;
   const d = await q(sb.rpc('rpc_motor_publik', { p_slug: slug }));
   const box = $('#pd'); if (!box) return;
@@ -333,21 +397,17 @@ async function halDetailPublik(slug) {
     box.innerHTML = `<div class="card">${kosong('sentiment_dissatisfied', 'Maaf, motor ini sudah tidak tersedia.')}<div class="center"><a class="btn" href="#/">Lihat motor lainnya</a></div></div>`; return;
   }
   const m = d.motor, u = d.usaha; document.title = `${nmMotor(m)} ${m.tahun} — ${u.nama_usaha}`; $('#pd-nama').textContent = nmMotor(m);
-  const fotos = d.foto || []; let aktif = 0;
+  const fotos = d.foto || [];
   const pesan = `Halo ${u.nama_usaha}, saya tertarik dengan ${nmMotor(m)} ${m.tahun}${m.warna ? ' (' + m.warna + ')' : ''}. Apakah masih tersedia?\n${linkBagikan(m.slug)}`;
-  box.innerHTML = `<div class="grid cols" style="align-items:start"><div class="gallery"><div class="main-ph" id="g-main"></div><div class="thumbs" id="g-th"></div></div>
+  box.innerHTML = `<div class="grid cols" style="align-items:start"><div class="gallery"><div class="main-ph sl">${m.terverifikasi ? lencanaVerif() : ''}${fotos.length > 1 ? `<span class="sl-count">1/${fotos.length}</span>` : ''}
+    ${fotos.length ? `<div class="sl-track">${fotos.map((f, i) => `<div class="sl-item"><img ${i ? 'loading="lazy" ' : ''}src="${esc(urlPublik(f.path, f.v))}" alt="${esc(nmMotor(m))} foto ${i + 1}" draggable="false"></div>`).join('')}</div>${slPanah(fotos.length)}${slDots(fotos.length)}` : `<div class="sl-kosong">${ic('two_wheeler', 'lg')}</div>`}</div></div>
     <div class="card stack"><div><h1>${esc(nmMotor(m))}</h1><div class="muted">${esc(m.tahun)}${m.warna ? ' · ' + esc(m.warna) : ''}</div></div>
     <div class="pr num" style="font-size:26px;font-weight:800;color:var(--accent)">${m.harga ? rp(m.harga) : 'Hubungi kami'}</div>
-    <div>${[['Tahun', m.tahun], ['Warna', m.warna], ['Kilometer', m.kilometer != null ? angka(m.kilometer) + ' km' : null], ['Kelengkapan surat', m.kelengkapan_surat]].filter((r) => r[1]).map((r) => `<div class="kv"><span>${r[0]}</span><span>${esc(r[1])}</span></div>`).join('')}</div>
+    <div>${[['Tahun', m.tahun], ['Warna', m.warna], ['Kilometer', m.kilometer != null ? angka(m.kilometer) + ' km' : null], ['Kelengkapan surat', m.kelengkapan_surat], ['Pemeriksaan', m.terverifikasi ? 'Terverifikasi (lolos pengecekan kondisi)' : null]].filter((r) => r[1]).map((r) => `<div class="kv"><span>${r[0]}</span><span>${esc(r[1])}</span></div>`).join('')}</div>
     ${m.deskripsi ? `<div><h3>Deskripsi</h3><p style="white-space:pre-line;margin:6px 0 0">${esc(m.deskripsi)}</p></div>` : ''}
     ${u.alamat_usaha ? `<div class="small muted">${ic('location_on', 'sm')} ${esc(u.alamat_usaha)}</div>` : ''}</div></div>
     <div class="cta-bar">${u.wa_sorum ? `<a class="btn wa" href="${esc(waLink(u.wa_sorum, pesan))}" target="_blank" rel="noopener">${ic('chat')} Tanya via WhatsApp</a>` : ''}<button class="btn ghost" id="g-share" style="max-width:120px">${ic('share')} Bagikan</button></div>`;
-  const gambar = () => {
-    $('#g-main').innerHTML = fotos.length ? `<img src="${esc(urlPublik(fotos[aktif].path, fotos[aktif].v))}" alt="${esc(nmMotor(m))} foto ${aktif + 1}">` : ic('two_wheeler', 'lg');
-    $('#g-th').innerHTML = fotos.length > 1 ? fotos.map((f, i) => `<button class="${i === aktif ? 'active' : ''}" data-i="${i}" aria-label="Foto ${i + 1}"><img src="${esc(urlPublik(f.path, f.v))}" alt=""></button>`).join('') : '';
-  };
-  gambar();
-  $('#g-th').onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) { aktif = +b.dataset.i; gambar(); } };
+  pasangSlider($('.gallery', box));
   $('#g-share').onclick = () => bagikan(m);
 }
 
@@ -541,7 +601,7 @@ async function halUnit(id, tab) {
   const m = await q(sb.from('v_motor_ringkas').select('*').eq('id', id).maybeSingle());
   if (!m) { p.innerHTML = kosong('search_off', 'Unit tidak ditemukan.'); return; }
   $('.topbar .title').textContent = nmMotor(m);
-  p.innerHTML = `<div class="row" style="gap:14px">${thumbMotor(m).replace('class="thumb"', 'class="thumb" style="width:72px;height:72px"')}<div class="grow"><h1>${esc(nmMotor(m))}</h1><div class="muted small">${esc(m.kode_unit)} · ${esc(m.nopol)} · ${esc(m.tahun)}</div><div class="mt-s">${badge(m.status)}</div></div></div>
+  p.innerHTML = `<div class="row" style="gap:14px">${thumbMotor(m).replace('class="thumb"', 'class="thumb" style="width:72px;height:72px"')}<div class="grow"><h1>${esc(nmMotor(m))}</h1><div class="muted small">${esc(m.kode_unit)} · ${esc(m.nopol)} · ${esc(m.tahun)}</div><div class="mt-s row wrap">${badge(m.status)}${m.terverifikasi ? `<span class="badge ok">${ic('verified', 'sm')} Terverifikasi</span>` : ''}</div></div></div>
     <div class="tabs" id="u-tabs">${TAB_UNIT.map((t) => `<button class="tab ${t[0] === tab ? 'active' : ''}" data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div id="u-body">${loading(2)}</div>`;
   $('#u-tabs').onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) location.hash = `#/unit/${id}/${b.dataset.t}`; };
   const T = { info: tabInfo, foto: tabFoto, dokumen: tabDokumen, periksa: tabPeriksa, restorasi: tabResto, riwayat: tabRiwayat }[tab];
@@ -672,14 +732,19 @@ async function tabPeriksa(m, box) {
   const semua = [...tpl.map((t) => ({ kategori: t.kategori, butir: t.butir })), ...extra.map((r) => ({ kategori: r.kategori, butir: r.butir }))];
   const grup = {}; semua.forEach((s) => (grup[s.kategori] = grup[s.kategori] || []).push(s));
   const terisi = semua.filter((s) => by[s.kategori + '|' + s.butir] && by[s.kategori + '|' + s.butir].kondisi).length;
-  box.innerHTML = `<div class="stack"><div class="card flat"><div class="row between small"><span>Terisi ${terisi} dari ${semua.length} butir</span><span class="muted">${Math.round(terisi / Math.max(1, semua.length) * 100)}%</span></div><div class="progress mt-s"><i style="width:${terisi / Math.max(1, semua.length) * 100}%"></i></div></div>
+  const lengkap = semua.length > 0 && terisi === semua.length;
+  const kartuVerif = `<div class="card"><div class="row between"><div><h3>${ic('verified', 'sm')} Terverifikasi (Quality Check)</h3><div class="small muted">${m.terverifikasi ? 'Lencana tampil di katalog publik. Matikan bila kondisi motor berubah.' : lengkap ? 'Semua butir sudah diperiksa. Aktifkan agar lencana tampil di katalog publik.' : `Lengkapi ${semua.length - terisi} butir lagi untuk dapat mengaktifkan lencana.`}</div></div><label class="row"><input type="checkbox" id="u-verif" ${m.terverifikasi ? 'checked' : ''} ${lengkap || m.terverifikasi ? '' : 'disabled'} aria-label="Terverifikasi" style="width:22px;min-height:22px"></label></div></div>`;
+  box.innerHTML = `<div class="stack">${kartuVerif}<div class="card flat"><div class="row between small"><span>Terisi ${terisi} dari ${semua.length} butir</span><span class="muted">${Math.round(terisi / Math.max(1, semua.length) * 100)}%</span></div><div class="progress mt-s"><i style="width:${terisi / Math.max(1, semua.length) * 100}%"></i></div></div>
     ${Object.entries(grup).map(([k, l]) => `<div class="card"><h3>${esc(k)}</h3><div class="stack mt-s">${l.map((s, i) => { const r = by[k + '|' + s.butir] || {}; return `<div class="field" data-k="${esc(k)}" data-b="${esc(s.butir)}"><label>${esc(s.butir)}</label><div class="row"><select data-kond style="flex:1.2"><option value="">— belum diperiksa —</option>${KONDISI.map((x) => `<option ${r.kondisi === x ? 'selected' : ''}>${x}</option>`).join('')}</select><input data-cat placeholder="Catatan" value="${esc(r.catatan || '')}" style="flex:1.5"></div></div>`; }).join('')}</div></div>`).join('')}</div>`;
   const simpan = async (f) => {
     const kond = $('[data-kond]', f).value || null, cat = $('[data-cat]', f).value.trim() || null;
     const { error } = await sb.from('pemeriksaan').upsert({ motor_id: m.id, kategori: f.dataset.k, butir: f.dataset.b, kondisi: kond, catatan: cat, tanggal: hariIni(), updated_at: new Date().toISOString() }, { onConflict: 'motor_id,kategori,butir' });
     if (error) gagal(error); else toast('Tersimpan', 'ok');
   };
-  box.onchange = (e) => { const f = e.target.closest('[data-k]'); if (f) simpan(f); };
+  box.onchange = async (e) => {
+    if (e.target.id === 'u-verif') { const c = e.target; if (await tulis(sb.from('motor').update({ terverifikasi: c.checked }).eq('id', m.id), c.checked ? 'Unit ditandai Terverifikasi.' : 'Tanda Terverifikasi dimatikan.')) { m.terverifikasi = c.checked; halUnit(m.id, 'periksa'); } else c.checked = !c.checked; return; }
+    const f = e.target.closest('[data-k]'); if (f) simpan(f);
+  };
 }
 
 // ── Tab Restorasi (pekerjaan + biaya) ──
@@ -1051,6 +1116,78 @@ async function halLog() {
 }
 
 // ── Pengaturan ──
+// ── Tampilan katalog publik (logo & banner) — hanya owner ──
+const MAKS_BANNER = 5;
+const bacaBanner = (cfg) => { try { const a = JSON.parse(cfg.banner_slides || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+const hapusFilePublik = (path) => path ? sb.storage.from('motor-foto-publik').remove([path]).catch(() => {}) : null;   // best-effort
+async function unggahTampilan(prefix, file, png) {
+  try {
+    if (!/^image\//.test(file.type)) throw new Error('Pilih file gambar (JPG, PNG, atau WebP).');
+    const blob = await kompres(file, png ? 400 : 1600, 0.85, png ? 'image/png' : 'image/jpeg');
+    const path = `${prefix}/${Date.now()}.${png ? 'png' : 'jpg'}`;
+    const { error } = await sb.storage.from('motor-foto-publik').upload(path, blob, { contentType: png ? 'image/png' : 'image/jpeg' });
+    if (error) throw error;
+    return path;
+  } catch (e) { gagal(e); return null; }
+}
+const simpanBanner = (list) => tulis(sb.from('pengaturan').upsert([{ key: 'banner_slides', value: JSON.stringify(list) }], { onConflict: 'key' }));
+function kartuKatalogHtml(cfg) {
+  const list = bacaBanner(cfg);
+  return `<div class="card stack"><div><h3>Tampilan katalog publik</h3><p class="small muted" style="margin:4px 0 0">Logo dan banner geser (slider) di halaman katalog.</p></div>
+    <div class="row" style="gap:12px"><span class="pub-logo-prev">${cfg.logo_path ? `<img src="${esc(urlPublik(cfg.logo_path))}" alt="Logo">` : ic('two_wheeler')}</span>
+      <div class="grow"><b>Logo</b><div class="xs muted">Tampil di sebelah kiri nama showroom. Disarankan PNG persegi/transparan.</div></div></div>
+    <div class="row wrap"><button class="btn ghost sm" id="lg-up">${ic('upload', 'sm')} ${cfg.logo_path ? 'Ganti logo' : 'Unggah logo'}</button>${cfg.logo_path ? `<button class="btn ghost sm" id="lg-del">${ic('delete', 'sm')} Hapus</button>` : ''}</div>
+    <hr class="sep"><div class="row between"><div><b>Banner</b> <span class="xs muted">(${list.length}/${MAKS_BANNER})</span><div class="xs muted">Ukuran ideal 1600×800 px (rasio 2:1). Bila kosong, tampil banner bawaan.</div></div>
+      <button class="btn accent sm" id="bn-add" ${list.length >= MAKS_BANNER ? 'disabled' : ''}>${ic('add', 'sm')} Banner</button></div>
+    ${list.length ? `<div class="list">${list.map((b, i) => `<div class="item bn-row" data-i="${i}"><span class="bn-th">${b.path ? `<img src="${esc(urlPublik(b.path))}" alt="">` : ic('image')}</span><div class="grow"><div class="t">${esc(b.judul || b.label || 'Banner ' + (i + 1))}</div><div class="xs muted">${esc(b.sub || (b.path ? 'Gambar' : 'Teks saja'))}</div></div>
+      <div class="row bn-act" style="gap:2px"><button class="icon-btn" data-a="naik" aria-label="Naik" ${i === 0 ? 'disabled' : ''}>${ic('arrow_upward')}</button><button class="icon-btn" data-a="turun" aria-label="Turun" ${i === list.length - 1 ? 'disabled' : ''}>${ic('arrow_downward')}</button><button class="icon-btn" data-a="ubah" aria-label="Ubah">${ic('edit')}</button><button class="icon-btn" data-a="hapus" aria-label="Hapus">${ic('delete')}</button></div></div>`).join('')}</div>` : ''}</div>`;
+}
+function pasangKartuKatalog(cfg) {
+  const list = bacaBanner(cfg);
+  $('#lg-up').onclick = async () => {
+    const f = await pilihFile('image/*'); if (!f) return;
+    await sibuk($('#lg-up'), async () => {
+      const path = await unggahTampilan('logo', f, true); if (!path) return;
+      if (!(await tulis(sb.from('pengaturan').upsert([{ key: 'logo_path', value: path }], { onConflict: 'key' }), 'Logo disimpan.'))) { hapusFilePublik(path); return; }
+      hapusFilePublik(cfg.logo_path); halPengaturan();
+    });
+  };
+  const ld = $('#lg-del'); if (ld) ld.onclick = async () => {
+    if (!(await konfirmasi('Hapus logo?', 'Logo diganti ikon motor bawaan.', 'Hapus', true))) return;
+    if (await tulis(sb.from('pengaturan').upsert([{ key: 'logo_path', value: '' }], { onConflict: 'key' }), 'Logo dihapus.')) { hapusFilePublik(cfg.logo_path); halPengaturan(); }
+  };
+  const formBanner = (idx) => {
+    const b = idx == null ? {} : list[idx]; let berkas = null, lepas = false;
+    formSheet(idx == null ? 'Tambah banner' : 'Ubah banner', [
+      { html: `<div class="field"><label>Gambar banner</label><div class="bn-prev" id="bn-prev">${b.path ? `<img src="${esc(urlPublik(b.path))}" alt="">` : `<span class="muted small">Belum ada gambar</span>`}</div><div class="row wrap mt-s"><button type="button" class="btn ghost sm" id="bn-pilih">${ic('upload', 'sm')} Pilih gambar</button>${b.path ? `<button type="button" class="btn ghost sm" id="bn-lepas">Tanpa gambar</button>` : ''}</div><span class="hint">Rasio 2:1 (mis. 1600×800). Bagian tepi bisa terpotong di layar sempit.</span></div>` },
+      { k: 'label', label: 'Label kecil (opsional)', val: b.label, max: 30, ph: 'Mis. Promo Bulan Ini' },
+      { k: 'judul', label: 'Judul (opsional)', val: b.judul, max: 60, ph: 'Mis. Kualitas Terbaik, Harga Bersahabat' },
+      { k: 'sub', label: 'Teks pendukung (opsional)', val: b.sub, max: 100, ph: 'Mis. Temukan motor impianmu dengan mudah.' }
+    ], async (v) => {
+      let path = lepas ? '' : (b.path || '');
+      if (berkas) { path = await unggahTampilan('banner', berkas, false); if (!path) return false; }
+      const e = { path: path || undefined, label: v.label || undefined, judul: v.judul || undefined, sub: v.sub || undefined };
+      if (!e.path && !e.label && !e.judul && !e.sub) { toast('Isi gambar atau minimal satu teks.', 'err'); return false; }
+      const baru = list.slice(); if (idx == null) baru.push(e); else baru[idx] = e;
+      if (!(await simpanBanner(baru))) { if (berkas) hapusFilePublik(path); return false; }
+      if ((berkas || lepas) && b.path) hapusFilePublik(b.path);
+      ok('Banner disimpan.'); halPengaturan(); return true;
+    }, { onOpen: (sh) => {
+      $('#bn-pilih', sh.el).onclick = async () => { const f = await pilihFile('image/*'); if (!f) return; berkas = f; lepas = false; const u = URL.createObjectURL(f); $('#bn-prev', sh.el).innerHTML = `<img src="${u}" alt="">`; };
+      const l = $('#bn-lepas', sh.el); if (l) l.onclick = () => { lepas = true; berkas = null; $('#bn-prev', sh.el).innerHTML = '<span class="muted small">Tanpa gambar</span>'; };
+    } });
+  };
+  $('#bn-add').onclick = () => formBanner(null);
+  const box = $('#bn-add').closest('.card');
+  box.onclick = async (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const i = +b.closest('[data-i]').dataset.i, a = b.dataset.a;
+    if (a === 'ubah') return formBanner(i);
+    if (a === 'hapus') { if (!(await konfirmasi('Hapus banner?', 'Banner ini tidak lagi tampil di katalog.', 'Hapus', true))) return; const baru = list.filter((_, k) => k !== i); if (await simpanBanner(baru)) { ok('Banner dihapus.'); hapusFilePublik(list[i].path); halPengaturan(); } return; }
+    const j = a === 'naik' ? i - 1 : i + 1; if (j < 0 || j >= list.length) return;
+    const baru = list.slice(); [baru[i], baru[j]] = [baru[j], baru[i]]; if (await simpanBanner(baru)) halPengaturan();
+  };
+}
+
 async function halPengaturan() {
   const p = shell('Pengaturan', 'pengaturan');
   const cfg = {}; (await q(sb.from('pengaturan').select('*')) || []).forEach((r) => cfg[r.key] = r.value);
@@ -1058,6 +1195,7 @@ async function halPengaturan() {
     <div class="card"><h3>Tampilan</h3><div class="chips mt-s" id="pg-tema">${[['auto', 'Ikuti perangkat'], ['light', 'Terang'], ['dark', 'Gelap']].map(([k, l]) => `<button class="chip ${S.tema === k ? 'active' : ''}" data-t="${k}">${l}</button>`).join('')}</div></div>
     <div class="card"><h3>Profil saya</h3><div class="kv"><span>Peran</span><span>${isOwner() ? 'Owner' : 'Admin'}</span></div><div class="row wrap mt-s"><button class="btn ghost sm" id="pf-nama">${ic('edit', 'sm')} Ubah nama</button><button class="btn ghost sm" id="pf-pass">${ic('key', 'sm')} Ganti kata sandi</button></div></div>
     ${isOwner() ? `<div class="card"><h3>Identitas usaha</h3><div class="kv"><span>Nama usaha</span><span>${esc(cfg.nama_usaha)}</span></div><div class="kv"><span>Alamat</span><span>${esc(cfg.alamat_usaha || '—')}</span></div><div class="kv"><span>WhatsApp showroom</span><span>${esc(cfg.wa_sorum || '—')}</span></div><div class="kv"><span>Batas hari simpan</span><span>${esc(cfg.batas_hari_simpan)} hari</span></div><button class="btn ghost sm mt-s" id="pf-usaha">${ic('edit', 'sm')} Ubah</button></div>
+    ${kartuKatalogHtml(cfg)}
     <div class="card"><h3>Template pemeriksaan</h3><p class="small muted" style="margin:4px 0 8px">Butir checklist yang muncul pada tab Pemeriksaan setiap unit.</p><button class="btn ghost sm" id="pf-tpl">${ic('checklist', 'sm')} Kelola template</button></div>` : ''}
     <button class="btn danger block" id="pf-out">${ic('logout')} Keluar</button></div>`;
   $('#pg-tema').onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) { aturTema(b.dataset.t); $$('#pg-tema .chip').forEach((c) => c.classList.toggle('active', c === b)); } };
@@ -1069,6 +1207,7 @@ async function halPengaturan() {
       const rows = Object.entries(v).map(([key, value]) => ({ key, value: value == null ? '' : String(value) }));
       if (!(await tulis(sb.from('pengaturan').upsert(rows, { onConflict: 'key' }), 'Pengaturan disimpan.'))) return false; S.usaha = null; halPengaturan(); return true;
     });
+    pasangKartuKatalog(cfg);
     $('#pf-tpl').onclick = async () => {
       const t = (await q(sb.from('pemeriksaan_template').select('*').order('kategori').order('urutan'))) || [];
       const sh = sheet('Template pemeriksaan', `<div class="list">${t.map((x) => `<div class="row card flat"><div class="grow small"><b>${esc(x.kategori)}</b> · ${esc(x.butir)}</div><button class="icon-btn" data-d="${x.id}" aria-label="Hapus">${ic('delete', 'sm')}</button></div>`).join('')}</div>`, { noFocus: true, wide: true, footer: '<button class="btn accent" data-add>Tambah butir</button>' });
