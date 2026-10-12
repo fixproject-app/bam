@@ -196,7 +196,7 @@ async function urlTertanda(bucket, path) {
   return data.signedUrl;
 }
 // Kompres gambar di browser (hemat kuota & storage)
-function kompres(file, maks, mutu, tipe) {
+function kompres(file, maks, mutu, tipe, hias) {
   maks = maks || 1600; mutu = mutu || 0.82; tipe = tipe || 'image/jpeg';
   return new Promise((res, rej) => {
     if (!/^image\//.test(file.type)) return res(file);
@@ -209,6 +209,7 @@ function kompres(file, maks, mutu, tipe) {
       const cx = c.getContext('2d');
       if (tipe === 'image/jpeg') { cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); }   // PNG transparan → latar putih, bukan hitam
       cx.drawImage(img, 0, 0, w, h);
+      if (hias) { try { hias(cx, w, h); } catch (e) { console.warn('Watermark gagal digambar', e); } }
       c.toBlob((b) => { URL.revokeObjectURL(u); b ? res(b) : rej(new Error('Gagal memproses gambar.')); }, tipe, mutu);
     };
     img.onerror = () => { URL.revokeObjectURL(u); rej(new Error('File gambar tidak dapat dibaca.')); };
@@ -222,11 +223,11 @@ function pilihFile(accept) {
   });
 }
 // Unggah berkas (gambar dikompres; PDF apa adanya) → mengembalikan path atau null
-async function unggah(bucket, path, file, upsert) {
+async function unggah(bucket, path, file, upsert, hias) {
   try {
     if (file.size > 10 * 1024 * 1024) throw new Error('Ukuran file maksimal 10 MB.');
     let body = file, type = file.type;
-    if (/^image\//.test(file.type)) { body = await kompres(file, bucket === 'motor-foto-publik' ? 1600 : 2000); type = 'image/jpeg'; }
+    if (/^image\//.test(file.type)) { body = await kompres(file, bucket === 'motor-foto-publik' ? 1600 : 2000, 0.82, 'image/jpeg', hias); type = 'image/jpeg'; }
     const { error } = await sb.storage.from(bucket).upload(path, body, { contentType: type, upsert: !!upsert });
     if (error) throw error;
     return path;
@@ -247,6 +248,35 @@ async function pratinjau(bucket, path, judul) {
     $('[data-t]', ft).onclick = () => sh.close();
   } catch (e) { sh.close(); gagal(e); }
 }
+
+// ── Watermark foto katalog (ditempel permanen saat unggah; hanya foto publik slot 1–4) ──
+// Pengaturan: watermark_aktif ('0' = mati; selain itu hidup), watermark_teks (kosong = nama usaha).
+function muatGambar(url) {
+  return new Promise((res) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = url; });
+}
+async function siapkanWatermark() {
+  const { data, error } = await sb.from('pengaturan').select('key,value').in('key', ['watermark_aktif', 'watermark_teks', 'nama_usaha', 'logo_path']);
+  if (error || !data) return null;   // gagal baca pengaturan → unggah tanpa watermark (foto tetap tersimpan)
+  const c = {}; data.forEach((r) => c[r.key] = r.value);
+  if (c.watermark_aktif === '0') return null;
+  const teks = (c.watermark_teks || c.nama_usaha || '').trim(), logo = c.logo_path ? await muatGambar(urlPublik(c.logo_path) + '?wm=1') : null;
+  if (!teks && !logo) return null;
+  return (cx, w, h) => {
+    const sisi = Math.min(w, h), gap = Math.round(sisi * 0.025), fam = '"Plus Jakarta Sans", Inter, Arial, sans-serif';
+    let fs = Math.max(14, Math.round(sisi * 0.055)), lw = 0, lh = 0;
+    cx.save(); cx.globalAlpha = 0.5; cx.textAlign = 'center'; cx.textBaseline = 'top';
+    if (teks) { cx.font = `700 ${fs}px ${fam}`; while (fs > 10 && cx.measureText(teks).width > w * 0.8) { fs--; cx.font = `700 ${fs}px ${fam}`; } }
+    if (logo) { lw = Math.round(Math.min(w * 0.3, sisi * 0.34)); lh = Math.round(lw * logo.naturalHeight / logo.naturalWidth); if (lh > h * 0.3) { lh = Math.round(h * 0.3); lw = Math.round(lh * logo.naturalWidth / logo.naturalHeight); } }
+    const th = teks ? fs : 0, total = lh + (logo && teks ? gap : 0) + th;
+    let y = Math.round((h - total) / 2);
+    cx.shadowColor = 'rgba(0,0,0,.65)'; cx.shadowBlur = Math.round(sisi * 0.02);
+    if (logo) { cx.drawImage(logo, Math.round((w - lw) / 2), y, lw, lh); y += lh + gap; }
+    if (teks) { cx.fillStyle = '#fff'; cx.fillText(teks, w / 2, y); }
+    cx.restore();
+  };
+}
+
+// (akhir watermark)
 
 // ── Tema ──
 function terapkanTema() {
@@ -701,7 +731,7 @@ async function buktiPembelian(m, b) {
 async function tabFoto(m, box) {
   const fotos = (await q(sb.from('motor_foto').select('*').eq('motor_id', m.id))) || [], by = {}; fotos.forEach((f) => by[f.urutan] = f);
   const nama = { 1: 'Utama', 2: 'Kedua', 3: 'Ketiga', 4: 'Keempat', 5: 'Foto Berkas' };
-  box.innerHTML = `<div class="stack"><div class="alert info">${ic('info')}<div>Foto 1–4 tampil di katalog publik. <b>Foto Berkas</b> (slot 5) bersifat privat dan tidak pernah tampil di katalog. Foto dikompres otomatis.</div></div>
+  box.innerHTML = `<div class="stack"><div class="alert info">${ic('info')}<div>Foto 1–4 tampil di katalog publik (diberi watermark bila diaktifkan di Pengaturan). <b>Foto Berkas</b> (slot 5) bersifat privat, tanpa watermark, dan tidak pernah tampil di katalog. Foto dikompres otomatis.</div></div>
     <div class="slots">${[1, 2, 3, 4, 5].map((n) => `<button class="slot" data-n="${n}" aria-label="Foto ${nama[n]}">${by[n] ? `<img alt="" data-img="${n}" src="${n < 5 ? esc(urlPublik(by[n].path, Date.parse(by[n].updated_at) / 1000 | 0)) : ''}">` : `<div>${ic('add_a_photo')}<br>${nama[n]}</div>`}<span class="tag">${n === 5 ? 'Berkas' : n}</span></button>`).join('')}</div>
     <p class="xs muted">Ketuk slot untuk mengunggah/mengganti. ${isOwner() ? 'Ketuk lama… gunakan tombol Hapus pada pratinjau.' : ''}</p></div>`;
   if (by[5]) urlTertanda('motor-privat', by[5].path).then((u) => { const i = $('[data-img="5"]', box); if (i) i.src = u; }).catch(() => {});
@@ -722,7 +752,7 @@ async function tabFoto(m, box) {
     const f = await pilihFile('image/*'); if (!f) return;
     await sibuk(null, async () => {
       const bucket = n < 5 ? 'motor-foto-publik' : 'motor-privat', path = n < 5 ? `${m.id}/${n}.jpg` : `foto-berkas/${m.id}/5.jpg`;
-      const hasil = await unggah(bucket, path, f, true); if (!hasil) return;
+      const hasil = await unggah(bucket, path, f, true, n < 5 ? await siapkanWatermark() : null); if (!hasil) return;
       const { error } = await sb.from('motor_foto').upsert({ motor_id: m.id, urutan: n, jenis: FOTO_JENIS[n], bucket, path, updated_at: new Date().toISOString() }, { onConflict: 'motor_id,urutan' });
       if (error) return gagal(error); ok('Foto tersimpan.'); halUnit(m.id, 'foto');
     });
@@ -1161,6 +1191,7 @@ function kartuKatalogHtml(cfg) {
     <div class="row" style="gap:12px"><span class="pub-logo-prev">${cfg.logo_path ? `<img src="${esc(urlPublik(cfg.logo_path))}" alt="Logo">` : ic('two_wheeler')}</span>
       <div class="grow"><b>Logo</b><div class="xs muted">Tampil di sebelah kiri nama showroom. Disarankan PNG persegi/transparan.</div></div></div>
     <div class="row wrap"><button class="btn ghost sm" id="lg-up">${ic('upload', 'sm')} ${cfg.logo_path ? 'Ganti logo' : 'Unggah logo'}</button>${cfg.logo_path ? `<button class="btn ghost sm" id="lg-del">${ic('delete', 'sm')} Hapus</button>` : ''}</div>
+    <hr class="sep"><div class="row between"><div><b>Watermark foto</b> <span class="badge ${cfg.watermark_aktif === '0' ? '' : 'ok'}">${cfg.watermark_aktif === '0' ? 'Mati' : 'Aktif'}</span><div class="xs muted">Logo + teks transparan di tengah foto 1–4 saat diunggah. Foto yang sudah ada perlu diunggah ulang.</div></div><button class="btn ghost sm" id="wm-ubah">${ic('edit', 'sm')} Ubah</button></div>
     <hr class="sep"><div class="row between"><div><b>Media sosial</b><div class="xs muted">${['instagram', 'facebook', 'tiktok', 'youtube'].filter((k) => cfg['sosmed_' + k]).map((k) => NAMA_SOSMED[k]).join(', ') || 'Belum diisi. Tampil sebagai ikon di footer katalog.'}</div></div><button class="btn ghost sm" id="ss-ubah">${ic('edit', 'sm')} Ubah</button></div>
     <hr class="sep"><div class="row between"><div><b>Banner</b> <span class="xs muted">(${list.length}/${MAKS_BANNER})</span><div class="xs muted">Ukuran ideal 1600×800 px (rasio 2:1). Bila kosong, tampil banner bawaan.</div></div>
       <button class="btn accent sm" id="bn-add" ${list.length >= MAKS_BANNER ? 'disabled' : ''}>${ic('add', 'sm')} Banner</button></div>
@@ -1202,6 +1233,13 @@ function pasangKartuKatalog(cfg) {
       const l = $('#bn-lepas', sh.el); if (l) l.onclick = () => { lepas = true; berkas = null; $('#bn-prev', sh.el).innerHTML = '<span class="muted small">Tanpa gambar</span>'; };
     } });
   };
+  $('#wm-ubah').onclick = () => formSheet('Watermark foto', [
+    { k: 'watermark_aktif', label: 'Aktifkan watermark pada foto yang diunggah', type: 'checkbox', val: cfg.watermark_aktif !== '0' },
+    { k: 'watermark_teks', label: 'Teks watermark', val: cfg.watermark_teks, max: 40, ph: cfg.nama_usaha || 'Nama showroom', hint: 'Kosongkan untuk memakai nama showroom. Logo diambil dari logo di atas (bila sudah diunggah).' }
+  ], async (v) => {
+    const rows = [{ key: 'watermark_aktif', value: v.watermark_aktif ? '1' : '0' }, { key: 'watermark_teks', value: v.watermark_teks || '' }];
+    if (!(await tulis(sb.from('pengaturan').upsert(rows, { onConflict: 'key' }), 'Pengaturan watermark disimpan.'))) return false; halPengaturan(); return true;
+  });
   $('#ss-ubah').onclick = () => formSheet('Media sosial', ['instagram', 'facebook', 'tiktok', 'youtube'].map((k) => ({ k: 'sosmed_' + k, label: NAMA_SOSMED[k], val: cfg['sosmed_' + k], max: 200, ph: k === 'facebook' ? 'namahalaman atau https://…' : '@namaakun atau https://…' })).concat([{ html: '<span class="hint">Isi nama akun atau tautan lengkap. Kosongkan untuk menyembunyikan. Tombol WhatsApp memakai nomor showroom.</span>' }]), async (v) => {
     const rows = Object.entries(v).map(([key, value]) => ({ key, value: value == null ? '' : String(value).trim() }));
     if (!(await tulis(sb.from('pengaturan').upsert(rows, { onConflict: 'key' }), 'Media sosial disimpan.'))) return false; halPengaturan(); return true;
