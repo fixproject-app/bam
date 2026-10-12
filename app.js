@@ -395,7 +395,7 @@ function footerPublik(u) {
   const masuk = S.profile ? `<a class="pf-staff" href="#/dashboard" aria-label="Buka aplikasi" title="Buka aplikasi">${ic('dashboard')}</a>` : `<a class="pf-staff" href="#/masuk" aria-label="Masuk staf" title="Masuk staf">${ic('lock')}</a>`;
   return `<footer class="pub-foot"><div class="pf-nama">${esc(u.nama_usaha)}</div>${u.alamat_usaha ? `<div class="pf-alamat">${ic('location_on', 'sm')} ${esc(u.alamat_usaha)}</div>` : ''}
     ${tautan.length ? `<div class="pf-sosmed">${tautan.map(([k, h]) => `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer" aria-label="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}" title="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}">${k === 'whatsapp' ? ic('chat') : IKON_SOSMED[k]}</a>`).join('')}</div>` : ''}
-    <div class="pf-bawah"><span>© ${new Date().getFullYear()} ${esc(u.©2026 FIX PROJECT DEVELOPER)}</span>${masuk}</div></footer>`;
+    <div class="pf-bawah"><span>© ${new Date().getFullYear()} FIX PROJECT DEVELOPER</span>${masuk}</div></footer>`;
 }
 
 // ── Katalog publik ──
