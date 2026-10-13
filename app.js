@@ -18,6 +18,9 @@ const S = {
   tema: 'auto', cache: {}, motorFilter: { q: '', status: 'Semua' }
 };
 const isOwner = () => S.profile && S.profile.role === 'owner';
+// Admin hanya mengelola unit motor (data & foto) dan penjualan; pemilik mengakses semuanya.
+const rumah = () => (isOwner() ? '#/dashboard' : '#/motor');
+const HAL_ADMIN = ['motor', 'unit', 'transaksi', 'jual', 'penjualan', 'pengaturan'];
 
 // Pemilihan elemen & escape HTML (WAJIB untuk semua data dari database)
 const $ = (sel, el) => (el || document).querySelector(sel);
@@ -392,7 +395,7 @@ function linkSosmed(k, v) {
 function footerPublik(u) {
   const so = u.sosmed || {}, tautan = Object.keys(NAMA_SOSMED).map((k) => [k, linkSosmed(k, so[k])]).filter((x) => x[1]);
   if (u.wa_sorum) tautan.push(['whatsapp', waLink(u.wa_sorum)]);
-  const masuk = S.profile ? `<a class="pf-staff" href="#/dashboard" aria-label="Buka aplikasi" title="Buka aplikasi">${ic('dashboard')}</a>` : `<a class="pf-staff" href="#/masuk" aria-label="Masuk staf" title="Masuk staf">${ic('lock')}</a>`;
+  const masuk = S.profile ? `<a class="pf-staff" href="${rumah()}" aria-label="Buka aplikasi" title="Buka aplikasi">${ic('dashboard')}</a>` : `<a class="pf-staff" href="#/masuk" aria-label="Masuk staf" title="Masuk staf">${ic('lock')}</a>`;
   return `<footer class="pub-foot"><div class="pf-nama">${esc(u.nama_usaha)}</div>${u.alamat_usaha ? `<div class="pf-alamat">${ic('location_on', 'sm')} ${esc(u.alamat_usaha)}</div>` : ''}
     ${tautan.length ? `<div class="pf-sosmed">${tautan.map(([k, h]) => `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer" aria-label="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}" title="${k === 'whatsapp' ? 'WhatsApp' : NAMA_SOSMED[k]}">${k === 'whatsapp' ? ic('chat') : IKON_SOSMED[k]}</a>`).join('')}</div>` : ''}
     <div class="pf-bawah"><span>© ${new Date().getFullYear()} FIX PROJECT DEVELOPER</span>${masuk}</div></footer>`;
@@ -482,7 +485,7 @@ function halLogin() {
       const { error } = await sb.auth.signInWithPassword({ email: em, password: pw });
       if (error) { er.textContent = pesanError(error); er.classList.remove('hidden'); return; }
       await muatProfil();
-      if (S.profile) { sb.rpc('rpc_catat_login').then(() => {}, () => {}); location.hash = '#/dashboard'; }
+      if (S.profile) { sb.rpc('rpc_catat_login').then(() => {}, () => {}); location.hash = rumah(); }
       else { er.textContent = 'Akun Anda tidak aktif. Hubungi pemilik.'; er.classList.remove('hidden'); await sb.auth.signOut(); }
     });
   };
@@ -502,20 +505,21 @@ async function keluar() {
 
 // ── Shell terautentikasi ──
 const MENU = [
-  { k: 'dashboard', t: 'Dashboard', i: 'dashboard' }, { k: 'motor', t: 'Motor', i: 'two_wheeler' }, { k: 'transaksi', t: 'Transaksi', i: 'receipt_long' },
-  { k: 'restorasi', t: 'Restorasi', i: 'build' }, { k: 'pelanggan', t: 'Pelanggan', i: 'group' }, { k: 'pengeluaran', t: 'Pengeluaran', i: 'payments' },
-  { k: 'dokumen', t: 'Dokumen', i: 'description' }, { k: 'laporan', t: 'Laporan', i: 'assessment' },
+  { k: 'dashboard', t: 'Dashboard', i: 'dashboard', owner: true }, { k: 'motor', t: 'Motor', i: 'two_wheeler' }, { k: 'transaksi', t: 'Transaksi', i: 'receipt_long' },
+  { k: 'restorasi', t: 'Restorasi', i: 'build', owner: true }, { k: 'pelanggan', t: 'Pelanggan', i: 'group', owner: true }, { k: 'pengeluaran', t: 'Pengeluaran', i: 'payments', owner: true },
+  { k: 'dokumen', t: 'Dokumen', i: 'description', owner: true }, { k: 'laporan', t: 'Laporan', i: 'assessment', owner: true },
   { k: 'user', t: 'Pengguna', i: 'manage_accounts', owner: true }, { k: 'log', t: 'Log Aktivitas', i: 'history', owner: true }, { k: 'pengaturan', t: 'Pengaturan', i: 'settings' }
 ];
-const NAV_BAWAH = ['dashboard', 'motor', 'transaksi', 'restorasi'];
+const NAV_OWNER = ['dashboard', 'motor', 'transaksi', 'restorasi'], NAV_ADMIN = ['motor', 'transaksi'];
+const navBawah = () => (isOwner() ? NAV_OWNER : NAV_ADMIN);
 const menuAktif = () => MENU.filter((m) => !m.owner || isOwner());
 
 function shell(judul, aktif, opsi) {
   opsi = opsi || {};
   const nm = (S.usaha && S.usaha.nama_usaha) || 'Berkah Abadi Motor';
   const side = menuAktif().map((m) => `<a href="#/${m.k}" class="${m.k === aktif ? 'active' : ''}">${ic(m.i)} ${esc(m.t)}</a>`).join('');
-  const bawah = NAV_BAWAH.map((k) => { const m = MENU.find((x) => x.k === k); return `<button data-nav="${k}" class="${k === aktif ? 'active' : ''}">${ic(m.i)}<span>${esc(m.t)}</span></button>`; }).join('')
-    + `<button data-more class="${NAV_BAWAH.includes(aktif) ? '' : 'active'}">${ic('menu')}<span>Lainnya</span></button>`;
+  const bawah = navBawah().map((k) => { const m = MENU.find((x) => x.k === k); return `<button data-nav="${k}" class="${k === aktif ? 'active' : ''}">${ic(m.i)}<span>${esc(m.t)}</span></button>`; }).join('')
+    + `<button data-more class="${navBawah().includes(aktif) ? '' : 'active'}">${ic('menu')}<span>Lainnya</span></button>`;
   app().innerHTML = `<div class="shell"><nav class="sidebar" aria-label="Menu utama"><div class="brand">${esc(nm)}</div>${side}<div class="spacer"></div>
     <a href="#/" target="_blank" rel="noopener">${ic('storefront')} Katalog publik</a><button class="navlink" data-keluar>${ic('logout')} Keluar</button></nav>
     <div class="content"><header class="topbar">${opsi.kembali ? `<a class="icon-btn" href="${esc(opsi.kembali)}" aria-label="Kembali">${ic('arrow_back')}</a>` : `<span class="brand">${ic('two_wheeler')}</span>`}
@@ -532,11 +536,11 @@ function shell(judul, aktif, opsi) {
   return $('#page');
 }
 function menuLainnya() {
-  const sh = sheet('Menu lainnya', `<div class="fab-menu">${menuAktif().filter((m) => !NAV_BAWAH.includes(m.k)).map((m) => `<button data-go="${m.k}">${ic(m.i)}${esc(m.t)}</button>`).join('')}<button data-go-pub>${ic('storefront')}Katalog publik</button><button data-out>${ic('logout')}Keluar</button></div>`, { noFocus: true });
+  const sh = sheet('Menu lainnya', `<div class="fab-menu">${menuAktif().filter((m) => !navBawah().includes(m.k)).map((m) => `<button data-go="${m.k}">${ic(m.i)}${esc(m.t)}</button>`).join('')}<button data-go-pub>${ic('storefront')}Katalog publik</button><button data-out>${ic('logout')}Keluar</button></div>`, { noFocus: true });
   sh.el.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.go) { sh.close(); location.hash = '#/' + b.dataset.go; } else if (b.hasAttribute('data-go-pub')) { sh.close(); window.open('#/', '_blank'); } else if (b.hasAttribute('data-out')) { sh.close(); keluar(); } };
 }
 function menuTambah() {
-  const it = [['two_wheeler', 'Unit Motor Baru', 'unitBaru'], ['sell', 'Jual Motor', 'jual'], ['payments', 'Pembayaran', 'bayar'], ['build', 'Pekerjaan Restorasi', 'resto'], ['receipt', 'Pengeluaran', 'keluar'], ['person_add', 'Pelanggan', 'pelanggan']];
+  const it = [['two_wheeler', 'Unit Motor Baru', 'unitBaru'], ['sell', 'Jual Motor', 'jual'], ['payments', 'Pembayaran', 'bayar'], ...(isOwner() ? [['build', 'Pekerjaan Restorasi', 'resto'], ['receipt', 'Pengeluaran', 'keluar'], ['person_add', 'Pelanggan', 'pelanggan']] : [])];
   const sh = sheet('Tambah cepat', `<div class="fab-menu">${it.map((x) => `<button data-a="${x[2]}">${ic(x[0])}${x[1]}</button>`).join('')}</div>`, { noFocus: true });
   sh.el.onclick = (e) => { const b = e.target.closest('[data-a]'); if (!b) return; sh.close(); aksiCepat(b.dataset.a); };
 }
@@ -601,7 +605,7 @@ async function halMotor(parsed) {
 // ── Form unit (tambah / ubah) ──
 async function daftarSumber() { return (await q(sb.from('sumber_motor').select('id,nama,hp').order('nama'))) || []; }
 async function formUnit(m) {
-  const baru = !m, sumber = await daftarSumber();
+  const baru = !m, sumber = isOwner() ? await daftarSumber() : [];
   const bisaStatus = baru || ['Masuk', 'Pemeriksaan', 'Restorasi', 'Ready'].includes(m.status);
   const F = [
     { k: 'merk', label: 'Merk', req: true, val: m && m.merk, ph: 'Honda' }, { k: 'tipe', label: 'Tipe', req: true, val: m && m.tipe, ph: 'Beat Street' },
@@ -609,30 +613,31 @@ async function formUnit(m) {
     { k: 'nopol', label: 'Nomor polisi', req: true, val: m && m.nopol, ph: 'B 1234 ABC' }, { k: 'kilometer', label: 'Kilometer', type: 'number', val: m && m.kilometer, min: 0, inputmode: 'numeric' },
     { k: 'no_rangka', label: 'Nomor rangka', val: m && m.no_rangka }, { k: 'no_mesin', label: 'Nomor mesin', val: m && m.no_mesin },
     bisaStatus ? { k: 'status', label: 'Status', type: 'select', opts: ['Masuk', 'Pemeriksaan', 'Restorasi', 'Ready'], val: m ? m.status : 'Masuk', hint: 'Booking & Terjual diatur otomatis lewat menu Penjualan.' } : { html: `<div class="field"><label>Status</label><div>${badge(m.status)} <span class="hint">diatur otomatis oleh penjualan</span></div></div>` },
-    { k: 'sumber_id', label: 'Penjual / asal motor', type: 'select', opts: [['', '— belum dipilih —'], ...sumber.map((s) => [s.id, s.nama + (s.hp ? ' · ' + s.hp : '')]), ['__baru', '+ Tambah penjual baru…']], val: (m && m.sumber_id) || '' },
-    { k: 'sumber_nama', label: 'Nama penjual baru', val: '' }, { k: 'sumber_hp', label: 'No. HP penjual', val: '', inputmode: 'tel' },
+    ...(!isOwner() ? [] : [{ k: 'sumber_id', label: 'Penjual / asal motor', type: 'select', opts: [['', '— belum dipilih —'], ...sumber.map((s) => [s.id, s.nama + (s.hp ? ' · ' + s.hp : '')]), ['__baru', '+ Tambah penjual baru…']], val: (m && m.sumber_id) || '' },
+    { k: 'sumber_nama', label: 'Nama penjual baru', val: '' }, { k: 'sumber_hp', label: 'No. HP penjual', val: '', inputmode: 'tel' }]),
     { k: 'harga_jual', label: 'Harga jual (Rp)', type: 'rupiah', val: m && m.harga_jual }, { k: 'kelengkapan_surat', label: 'Kelengkapan surat', val: m && m.kelengkapan_surat, ph: 'BPKB + STNK + Faktur' },
     { k: 'deskripsi_publik', label: 'Deskripsi untuk katalog', type: 'textarea', val: m && m.deskripsi_publik }, { k: 'catatan', label: 'Catatan internal', type: 'textarea', val: m && m.catatan },
     { k: 'tampil_katalog', label: 'Tampilkan di katalog publik (jika Ready)', type: 'checkbox', val: m && m.tampil_katalog }
   ];
-  if (baru) F.push(
+  if (baru && isOwner()) F.push(
     { html: '<h3 style="margin-top:8px">Data pembelian</h3>' },
     { k: 'harga_beli', label: 'Harga beli (Rp)', type: 'rupiah', req: true }, { k: 'biaya_transport', label: 'Biaya transport', type: 'rupiah' }, { k: 'biaya_administrasi', label: 'Biaya administrasi', type: 'rupiah' }, { k: 'biaya_lain', label: 'Biaya lain', type: 'rupiah' },
     { k: 'metode_pembayaran', label: 'Metode pembayaran', type: 'select', opts: ['Tunai', 'Transfer'], val: 'Tunai' }, { k: 'tanggal_beli', label: 'Tanggal beli', type: 'date', val: hariIni() });
   formSheet(baru ? 'Tambah unit motor' : 'Ubah unit', F, async (v) => {
     if (v.tahun < 1980 || v.tahun > new Date().getFullYear() + 1) { toast('Tahun tidak valid.', 'err'); return false; }
-    let sumberId = v.sumber_id;
+    let sumberId = isOwner() ? v.sumber_id : null;
     if (sumberId === '__baru') {
       if (!v.sumber_nama) { toast('Nama penjual baru wajib diisi.', 'err'); return false; }
       const s = await q(sb.from('sumber_motor').insert({ nama: v.sumber_nama, hp: v.sumber_hp }).select('id').single());
       if (!s) return false; sumberId = s.id;
     }
     const rec = { merk: v.merk, tipe: v.tipe, tahun: v.tahun, warna: v.warna, nopol: v.nopol, no_rangka: v.no_rangka, no_mesin: v.no_mesin, kilometer: v.kilometer,
-      sumber_id: sumberId || null, harga_jual: v.harga_jual, kelengkapan_surat: v.kelengkapan_surat, deskripsi_publik: v.deskripsi_publik, catatan: v.catatan, tampil_katalog: !!v.tampil_katalog };
+      ...(isOwner() ? { sumber_id: sumberId || null } : {}), harga_jual: v.harga_jual, kelengkapan_surat: v.kelengkapan_surat, deskripsi_publik: v.deskripsi_publik, catatan: v.catatan, tampil_katalog: !!v.tampil_katalog };
     if (bisaStatus) rec.status = v.status;
     if (baru) {
       const mm = await q(sb.from('motor').insert(rec).select('id').single());
       if (!mm) return false;
+      if (!isOwner()) { ok('Unit tersimpan. Pemilik akan melengkapi data pembelian.'); location.hash = '#/unit/' + mm.id + '/foto'; return true; }
       const pb = await tulis(sb.from('pembelian').insert({ motor_id: mm.id, sumber_id: rec.sumber_id, harga_beli: v.harga_beli || 0, biaya_transport: v.biaya_transport || 0, biaya_administrasi: v.biaya_administrasi || 0, biaya_lain: v.biaya_lain || 0, metode_pembayaran: v.metode_pembayaran, tanggal_beli: v.tanggal_beli || hariIni() }));
       if (pb) ok('Unit tersimpan.'); else toast('Unit tersimpan, tetapi data pembelian gagal. Lengkapi dari halaman unit.', 'err');
       location.hash = '#/unit/' + mm.id + '/foto';
@@ -642,21 +647,23 @@ async function formUnit(m) {
     }
     return true;
   }, { wide: true, onOpen: (sh, form) => {
-    const sel = $('[name=sumber_id]', form), a = $('[name=sumber_nama]', form).closest('.field'), b = $('[name=sumber_hp]', form).closest('.field');
+    const sel = $('[name=sumber_id]', form); if (!sel) return;
+    const a = $('[name=sumber_nama]', form).closest('.field'), b = $('[name=sumber_hp]', form).closest('.field');
     const t = () => { const on = sel.value === '__baru'; a.classList.toggle('hidden', !on); b.classList.toggle('hidden', !on); }; sel.onchange = t; t();
   } });
 }
 
 // ── Detail unit ──
-const TAB_UNIT = [['info', 'Info'], ['foto', 'Foto'], ['dokumen', 'Dokumen'], ['periksa', 'Pemeriksaan'], ['restorasi', 'Restorasi'], ['riwayat', 'Riwayat']];
+const TAB_SEMUA = [['info', 'Info'], ['foto', 'Foto'], ['dokumen', 'Dokumen'], ['periksa', 'Pemeriksaan'], ['restorasi', 'Restorasi'], ['riwayat', 'Riwayat']];
+const tabUnit = () => (isOwner() ? TAB_SEMUA : TAB_SEMUA.filter((t) => ['info', 'foto', 'dokumen', 'periksa'].includes(t[0])));
 async function halUnit(id, tab) {
-  tab = TAB_UNIT.some((t) => t[0] === tab) ? tab : 'info'; S.tabUnit = tab;
+  tab = tabUnit().some((t) => t[0] === tab) ? tab : 'info'; S.tabUnit = tab;
   const p = shell('Detail unit', 'motor', { kembali: '#/motor' });
   const m = await q(sb.from('v_motor_ringkas').select('*').eq('id', id).maybeSingle());
   if (!m) { p.innerHTML = kosong('search_off', 'Unit tidak ditemukan.'); return; }
   $('.topbar .title').textContent = nmMotor(m);
   p.innerHTML = `<div class="row" style="gap:14px">${thumbMotor(m).replace('class="thumb"', 'class="thumb" style="width:72px;height:72px"')}<div class="grow"><h1>${esc(nmMotor(m))}</h1><div class="muted small">${esc(m.kode_unit)} · ${esc(m.nopol)} · ${esc(m.tahun)}</div><div class="mt-s row wrap">${badge(m.status)}${m.terverifikasi ? `<span class="badge ok">${ic('verified', 'sm')} Terverifikasi</span>` : ''}</div></div></div>
-    <div class="tabs" id="u-tabs">${TAB_UNIT.map((t) => `<button class="tab ${t[0] === tab ? 'active' : ''}" data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div id="u-body">${loading(2)}</div>`;
+    <div class="tabs" id="u-tabs">${tabUnit().map((t) => `<button class="tab ${t[0] === tab ? 'active' : ''}" data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div id="u-body">${loading(2)}</div>`;
   $('#u-tabs').onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) location.hash = `#/unit/${id}/${b.dataset.t}`; };
   const T = { info: tabInfo, foto: tabFoto, dokumen: tabDokumen, periksa: tabPeriksa, restorasi: tabResto, riwayat: tabRiwayat }[tab];
   await T(m, $('#u-body'));
@@ -665,17 +672,17 @@ async function halUnit(id, tab) {
 async function tabInfo(m, box) {
   const [keu, beli, sumber] = await Promise.all([
     isOwner() ? q(sb.from('v_motor_keuangan').select('*').eq('motor_id', m.id).maybeSingle()) : null,
-    isOwner() ? q(sb.from('pembelian').select('*').eq('motor_id', m.id).maybeSingle()) : q(sb.from('v_pembelian_ringkas').select('*').eq('motor_id', m.id).maybeSingle()),
-    m.sumber_id ? q(sb.from('sumber_motor').select('nama,hp').eq('id', m.sumber_id).maybeSingle(), { senyap: true }) : null
+    isOwner() ? q(sb.from('pembelian').select('*').eq('motor_id', m.id).maybeSingle()) : null,
+    isOwner() && m.sumber_id ? q(sb.from('sumber_motor').select('nama,hp').eq('id', m.sumber_id).maybeSingle(), { senyap: true }) : null
   ]);
   const kv = (a, b) => `<div class="kv"><span>${a}</span><span>${b == null || b === '' ? '—' : b}</span></div>`;
   const aksiJual = m.status === 'Ready' ? `<a class="btn accent" href="#/jual/${m.id}">${ic('sell')} Jual motor ini</a>` : '';
   box.innerHTML = `<div class="stack">
     <div class="row wrap">${aksiJual}<button class="btn ghost" data-a="edit">${ic('edit')} Ubah</button><button class="btn ghost" data-a="share">${ic('share')} Bagikan</button></div>
     ${m.status === 'Ready' ? `<div class="card"><div class="row between"><div><h3>Tampil di katalog publik</h3><div class="small muted">${m.tampil_katalog ? 'Pengunjung dapat melihat unit ini.' : 'Unit disembunyikan dari katalog.'}${m.tampil_katalog && !m.foto_utama_path ? ' <b>Belum ada foto utama.</b>' : ''}</div></div><label class="row"><input type="checkbox" id="u-kat" ${m.tampil_katalog ? 'checked' : ''} style="width:22px;min-height:22px"></label></div></div>` : ''}
-    <div class="card"><h3>Spesifikasi</h3>${kv('Merk / tipe', esc(nmMotor(m)))}${kv('Tahun', esc(m.tahun))}${kv('Warna', esc(m.warna))}${kv('Kilometer', m.kilometer != null ? angka(m.kilometer) + ' km' : null)}${kv('Nomor polisi', esc(m.nopol))}${kv('No. rangka', esc(m.no_rangka))}${kv('No. mesin', esc(m.no_mesin))}${kv('Kelengkapan surat', esc(m.kelengkapan_surat))}${kv('Tanggal masuk', tgl(m.tanggal_masuk))}${kv('Lama tersimpan', m.hari_tersimpan != null ? m.hari_tersimpan + ' hari' : null)}${kv('Penjual', sumber ? esc(sumber.nama) + (sumber.hp ? ' · ' + esc(sumber.hp) : '') : null)}${kv('Harga jual', m.harga_jual ? '<b class="num">' + rp(m.harga_jual) + '</b>' : null)}</div>
+    <div class="card"><h3>Spesifikasi</h3>${kv('Merk / tipe', esc(nmMotor(m)))}${kv('Tahun', esc(m.tahun))}${kv('Warna', esc(m.warna))}${kv('Kilometer', m.kilometer != null ? angka(m.kilometer) + ' km' : null)}${kv('Nomor polisi', esc(m.nopol))}${kv('No. rangka', esc(m.no_rangka))}${kv('No. mesin', esc(m.no_mesin))}${kv('Kelengkapan surat', esc(m.kelengkapan_surat))}${kv('Tanggal masuk', tgl(m.tanggal_masuk))}${kv('Lama tersimpan', m.hari_tersimpan != null ? m.hari_tersimpan + ' hari' : null)}${isOwner() ? kv('Penjual', sumber ? esc(sumber.nama) + (sumber.hp ? ' · ' + esc(sumber.hp) : '') : null) : ''}${kv('Harga jual', m.harga_jual ? '<b class="num">' + rp(m.harga_jual) + '</b>' : null)}</div>
     ${m.status !== 'Terjual' && m.status !== 'Booking' ? `<div class="card"><h3>Ubah status</h3><div class="chips mt-s">${['Masuk', 'Pemeriksaan', 'Restorasi', 'Ready'].map((s) => `<button class="chip ${s === m.status ? 'active' : ''}" data-st="${s}">${s}</button>`).join('')}</div></div>` : ''}
-    ${isOwner() ? keuanganOwner(keu, beli) : pembelianAdmin(beli)}
+    ${isOwner() ? keuanganOwner(keu, beli) : ''}
     ${m.catatan ? `<div class="card"><h3>Catatan</h3><p style="white-space:pre-line;margin:4px 0 0">${esc(m.catatan)}</p></div>` : ''}
     ${isOwner() ? `<div class="right"><button class="btn danger sm" data-a="hapus">${ic('delete', 'sm')} Hapus unit</button></div>` : ''}</div>`;
   box.onclick = async (e) => {
@@ -704,14 +711,10 @@ function keuanganOwner(k, b) {
     ${kv('Harga jual', k.harga_jual ? rp(k.harga_jual) : '—')}${kv('Estimasi untung', k.estimasi_untung != null ? rp(k.estimasi_untung) : '—')}${k.untung_aktual != null ? kv('Untung aktual', '<b>' + rp(k.untung_aktual) + '</b>') : ''}
     <div class="row mt-s">${b && b.bukti_path ? `<button class="btn ghost sm" data-a="lihat-bukti">${ic('receipt', 'sm')} Lihat bukti</button>` : ''}<button class="btn ghost sm" data-a="bukti-beli">${ic('upload', 'sm')} ${b && b.bukti_path ? 'Ganti' : 'Unggah'} bukti pembelian</button></div></div>`;
 }
-function pembelianAdmin(b) {
-  return `<div class="card"><h3>Pembelian</h3>${b ? `<p class="small muted" style="margin:4px 0 8px">Pembelian sudah dicatat pada ${tgl(b.tanggal_beli)} (${esc(b.metode_pembayaran)}). Nominal hanya dapat dilihat pemilik.</p><button class="btn ghost sm" data-a="bukti-beli">${ic('upload', 'sm')} Unggah bukti pembelian</button>`
-    : `<p class="small muted" style="margin:4px 0 8px">Pembelian belum dicatat.</p><button class="btn accent sm" data-a="beli">Catat pembelian</button>`}</div>`;
-}
 function formPembelian(m, b) {
   const F = [{ k: 'harga_beli', label: 'Harga beli (Rp)', type: 'rupiah', req: true, val: b && b.harga_beli }, { k: 'biaya_transport', label: 'Biaya transport', type: 'rupiah', val: b && b.biaya_transport }, { k: 'biaya_administrasi', label: 'Biaya administrasi', type: 'rupiah', val: b && b.biaya_administrasi }, { k: 'biaya_lain', label: 'Biaya lain', type: 'rupiah', val: b && b.biaya_lain },
     { k: 'metode_pembayaran', label: 'Metode pembayaran', type: 'select', opts: ['Tunai', 'Transfer'], val: (b && b.metode_pembayaran) || 'Tunai' }, { k: 'tanggal_beli', label: 'Tanggal beli', type: 'date', val: (b && b.tanggal_beli) || hariIni() }, { k: 'catatan', label: 'Catatan', type: 'textarea', val: b && b.catatan }];
-  const ada = isOwner() && b && b.harga_beli != null;
+  const ada = b && b.harga_beli != null;
   formSheet(ada ? 'Ubah pembelian' : 'Catat pembelian', F, async (v) => {
     const rec = { harga_beli: v.harga_beli || 0, biaya_transport: v.biaya_transport || 0, biaya_administrasi: v.biaya_administrasi || 0, biaya_lain: v.biaya_lain || 0, metode_pembayaran: v.metode_pembayaran, tanggal_beli: v.tanggal_beli || hariIni(), catatan: v.catatan };
     const { error } = ada ? await sb.from('pembelian').update(rec).eq('motor_id', m.id) : await sb.from('pembelian').insert({ motor_id: m.id, ...rec });
@@ -783,7 +786,7 @@ async function tabPeriksa(m, box) {
   const [tpl, ada] = await Promise.all([q(sb.from('pemeriksaan_template').select('*').order('kategori').order('urutan')), q(sb.from('pemeriksaan').select('*').eq('motor_id', m.id))]);
   if (!tpl) return; const by = {}; (ada || []).forEach((r) => by[r.kategori + '|' + r.butir] = r);
   const extra = (ada || []).filter((r) => !tpl.some((t) => t.kategori === r.kategori && t.butir === r.butir));
-  const semua = [...tpl.map((t) => ({ kategori: t.kategori, butir: t.butir })), ...extra.map((r) => ({ kategori: r.kategori, butir: r.butir }))];
+  const semua = [...tpl.filter((t) => t.aktif).map((t) => ({ kategori: t.kategori, butir: t.butir })), ...extra.map((r) => ({ kategori: r.kategori, butir: r.butir }))];
   const grup = {}; semua.forEach((s) => (grup[s.kategori] = grup[s.kategori] || []).push(s));
   const terisi = semua.filter((s) => by[s.kategori + '|' + s.butir] && by[s.kategori + '|' + s.butir].kondisi).length;
   const lengkap = semua.length > 0 && terisi === semua.length;
@@ -894,7 +897,7 @@ async function halTransaksi() {
   const F = S.filterJual || (S.filterJual = { s: 'Semua' });
   const l = await q(sb.from('penjualan').select(SEL_JUAL).order('created_at', { ascending: false }).limit(200));
   if (!l) { p.innerHTML = kosong('error', 'Data belum dapat dimuat.'); return; }
-  const aks = [['two_wheeler', 'Unit baru', 'unitBaru'], ['sell', 'Jual motor', 'jual'], ['payments', 'Pembayaran', 'bayar'], ['build', 'Restorasi', 'resto'], ['receipt', 'Pengeluaran', 'keluar'], ['person_add', 'Pelanggan', 'pelanggan']];
+  const aks = [['two_wheeler', 'Unit baru', 'unitBaru'], ['sell', 'Jual motor', 'jual'], ['payments', 'Pembayaran', 'bayar'], ...(isOwner() ? [['build', 'Restorasi', 'resto'], ['receipt', 'Pengeluaran', 'keluar'], ['person_add', 'Pelanggan', 'pelanggan']] : [])];
   p.innerHTML = `<div class="stack"><div class="grid cat">${aks.map((x) => `<button class="card" data-a="${x[2]}" style="text-align:left;display:flex;flex-direction:column;gap:6px;color:var(--text)">${ic(x[0], 'lg')}<b>${x[1]}</b></button>`).join('')}</div>
     <h2>Penjualan</h2><div class="chips" id="j-chips">${['Semua', 'Booking', 'Proses Leasing', 'Lunas', 'Batal'].map((s) => `<button class="chip ${F.s === s ? 'active' : ''}" data-s="${s}">${s}</button>`).join('')}</div><div class="list" id="j-list"></div></div>`;
   const gambar = () => {
@@ -960,7 +963,7 @@ async function halPenjualan(id) {
   p.innerHTML = `<div class="stack"><div class="row between"><div><h1>${esc(nmMotor(j.motor))}</h1><div class="muted small">${esc(j.motor.kode_unit)} · ${esc(j.motor.nopol)}</div></div>${badge(j.status)}</div>
     ${j.status === 'Proses Leasing' ? `<div class="alert info">${ic('info')}<div>Penjualan kredit leasing: motor tercatat <b>Terjual</b>. Catat <b>Pencairan Leasing</b> hingga lunas.</div></div>` : ''}
     ${j.status === 'Booking' ? `<div class="alert">${ic('schedule')}<div>Belum lunas — motor berstatus <b>Booking</b> sampai pembayaran penuh.</div></div>` : ''}
-    <div class="card"><h3>Ringkasan</h3>${kv('Pelanggan', `<a href="#/pelanggan">${esc(j.pelanggan.nama)}</a>${j.pelanggan.hp ? ' · ' + esc(j.pelanggan.hp) : ''}`)}${kv('Tanggal jual', tgl(j.tanggal_jual))}${kv('Skema', esc(j.skema) + (j.nama_leasing ? ' — ' + esc(j.nama_leasing) : ''))}${kv('Sales', esc(j.sales))}
+    <div class="card"><h3>Ringkasan</h3>${kv('Pelanggan', `${isOwner() ? '<a href="#/pelanggan">' + esc(j.pelanggan.nama) + '</a>' : esc(j.pelanggan.nama)}${j.pelanggan.hp ? ' · ' + esc(j.pelanggan.hp) : ''}`)}${kv('Tanggal jual', tgl(j.tanggal_jual))}${kv('Skema', esc(j.skema) + (j.nama_leasing ? ' — ' + esc(j.nama_leasing) : ''))}${kv('Sales', esc(j.sales))}
       ${kv('Harga jual', '<span class="num">' + rp(j.harga_jual) + '</span>')}${j.diskon ? kv('Diskon', '<span class="num">− ' + rp(j.diskon) + '</span>') : ''}${kv('Harga akhir', '<span class="num">' + rp(j.harga_akhir) + '</span>', 'total')}${kv('Sudah dibayar', '<span class="num">' + rp(total) + '</span>')}${aktif ? kv('Sisa tagihan', `<b class="num" style="color:${sisa > 0 ? 'var(--danger)' : 'var(--ok)'}">${rp(sisa)}</b>`) : ''}
       ${j.catatan ? `<p class="small muted" style="white-space:pre-line">${esc(j.catatan)}</p>` : ''}<div class="progress mt-s"><i style="width:${Math.min(100, total / j.harga_akhir * 100)}%"></i></div></div>
     <div class="card"><div class="row between"><h3>Pembayaran</h3>${aktif && sisa > 0 ? `<button class="btn accent sm" data-a="bayar">${ic('add', 'sm')} Tambah</button>` : ''}</div>
@@ -1277,8 +1280,10 @@ async function halPengaturan() {
     pasangKartuKatalog(cfg);
     $('#pf-tpl').onclick = async () => {
       const t = (await q(sb.from('pemeriksaan_template').select('*').order('kategori').order('urutan'))) || [];
-      const sh = sheet('Template pemeriksaan', `<div class="list">${t.map((x) => `<div class="row card flat"><div class="grow small"><b>${esc(x.kategori)}</b> · ${esc(x.butir)}</div><button class="icon-btn" data-d="${x.id}" aria-label="Hapus">${ic('delete', 'sm')}</button></div>`).join('')}</div>`, { noFocus: true, wide: true, footer: '<button class="btn accent" data-add>Tambah butir</button>' });
-      sh.el.onclick = async (e) => { const d = e.target.closest('[data-d]'); if (d && (await konfirmasi('Hapus butir?', 'Butir dihapus dari template (hasil pemeriksaan unit yang sudah terisi tetap tersimpan).', 'Hapus', true))) { if (await tulis(sb.from('pemeriksaan_template').delete().eq('id', d.dataset.d))) { sh.close(); $('#pf-tpl').click(); } } };
+      const sh = sheet('Template pemeriksaan', `<p class="xs muted" style="margin:0 0 8px">Centang <b>Tampilkan</b> agar butir muncul di tab Pemeriksaan unit. Butir yang tidak dicentang disembunyikan dan tidak dihitung untuk Terverifikasi.</p><div class="list">${t.map((x) => `<div class="row card flat"><label class="row" style="gap:8px;flex:0 0 auto" title="Tampilkan"><input type="checkbox" data-akt="${x.id}" ${x.aktif ? 'checked' : ''} aria-label="Tampilkan ${esc(x.butir)}" style="width:22px;min-height:22px"></label><div class="grow small" style="${x.aktif ? '' : 'opacity:.55'}"><b>${esc(x.kategori)}</b> · ${esc(x.butir)}</div><button class="icon-btn" data-e="${x.id}" aria-label="Ubah">${ic('edit', 'sm')}</button><button class="icon-btn" data-d="${x.id}" aria-label="Hapus">${ic('delete', 'sm')}</button></div>`).join('')}</div>`, { noFocus: true, wide: true, footer: '<button class="btn accent" data-add>Tambah butir</button>' });
+      sh.el.onchange = async (e) => { const c = e.target.closest('[data-akt]'); if (!c) return; if (await tulis(sb.from('pemeriksaan_template').update({ aktif: c.checked }).eq('id', c.dataset.akt))) { const it = t.find((x) => x.id === c.dataset.akt); if (it) it.aktif = c.checked; c.closest('.card').querySelector('.grow').style.opacity = c.checked ? '' : '.55'; } else c.checked = !c.checked; };
+      const sunting = (e) => { const b = e.target.closest('[data-e]'); if (!b) return false; const x = t.find((r) => r.id === b.dataset.e); sh.close(); formSheet('Ubah butir', [{ k: 'kategori', label: 'Kategori', req: true, val: x.kategori }, { k: 'butir', label: 'Butir pemeriksaan', req: true, val: x.butir }], async (v) => { const kat = v.kategori.trim(), but = v.butir.trim(); if (!(await tulis(sb.from('pemeriksaan_template').update({ kategori: kat, butir: but }).eq('id', x.id), 'Butir diperbarui.'))) return false; if (kat !== x.kategori || but !== x.butir) await tulis(sb.from('pemeriksaan').update({ kategori: kat, butir: but }).eq('kategori', x.kategori).eq('butir', x.butir)); $('#pf-tpl').click(); return true; }); return true; };
+      sh.el.onclick = async (e) => { if (sunting(e)) return; const d = e.target.closest('[data-d]'); if (d && (await konfirmasi('Hapus butir?', 'Butir dihapus dari template (hasil pemeriksaan unit yang sudah terisi tetap tersimpan).', 'Hapus', true))) { if (await tulis(sb.from('pemeriksaan_template').delete().eq('id', d.dataset.d))) { sh.close(); $('#pf-tpl').click(); } } };
       $('[data-add]', sh.el).onclick = () => { sh.close(); formSheet('Tambah butir', [{ k: 'kategori', label: 'Kategori', req: true, ph: 'Mesin' }, { k: 'butir', label: 'Butir pemeriksaan', req: true }], async (v) => { if (!(await tulis(sb.from('pemeriksaan_template').insert({ ...v, urutan: 99 }), 'Butir ditambahkan.'))) return false; $('#pf-tpl').click(); return true; }); };
     };
   }
@@ -1297,13 +1302,13 @@ async function route() {
     // Halaman publik
     if (!a) return await halKatalog();
     if (a === 'motor' && seg[1]) return await halDetailPublik(seg[1]);
-    if (a === 'masuk') { if (S.profile) { location.hash = '#/dashboard'; return; } return halLogin(); }
+    if (a === 'masuk') { if (S.profile) { location.hash = rumah(); return; } return halLogin(); }
     // Halaman terautentikasi
     if (!S.profile) { await muatProfil(); if (rid !== _rid) return; }
     if (!S.profile) { location.hash = '#/masuk'; return; }
     if (!S.usaha) { const u = await q(sb.rpc('rpc_publik_config'), { senyap: true }); if (u) S.usaha = u; }
     if (rid !== _rid) return;
-    if ((a === 'user' || a === 'log') && !isOwner()) { location.hash = '#/dashboard'; return; }
+    if (!isOwner() && !HAL_ADMIN.includes(a)) { location.hash = rumah(); return; }
     switch (a) {
       case 'dashboard': return await halDashboard();
       case 'motor': return await halMotor(params);
@@ -1319,7 +1324,7 @@ async function route() {
       case 'user': return await halUser();
       case 'log': return await halLog();
       case 'pengaturan': return await halPengaturan();
-      default: location.hash = '#/dashboard';
+      default: location.hash = rumah();
     }
   } catch (e) {
     console.error(e);
